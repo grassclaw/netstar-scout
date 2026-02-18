@@ -19,12 +19,12 @@ SECURITY_FLAGS = {
 # Weights for each component in the final score calculation
 WEIGHTS = {
     'Connection_Security': 18,
-    'Certificate_Health': 16,
-    'DNS_Record_Health': 15,
-    'Domain_Reputation': 23,    
+    'Certificate_Health': 15,
+    'DNS_Record_Health': 14,
+    'Domain_Reputation': 24,    
     'WHOIS_Pattern': 10, #unused currently
-    'IP_Reputation': 0, #unused currently (probably won't be used)
-    'Credential_Safety': 18
+    'IP_Reputation': 2, #unused currently (probably won't be used)
+    'Credential_Safety': 17
 }
 
 
@@ -35,7 +35,8 @@ API_ENDPOINTS = [
     'hval', 
     'mail', 
     'method', 
-    'rdap'
+    'rdap',
+    'firewall'
 ]
 
 # Default target hostname used if no argument is provided

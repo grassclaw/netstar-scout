@@ -377,12 +377,18 @@ def score_cred_safety(cert_data:dict, hval_data:dict, scores:dict): #TODO: IMPLE
         if app_config.VERBOSE:
             print("Cred Safety Score: Significant Deduction - HSTS header missing. (CRED_SAFETY)", file=sys.stderr)
 
-def score_ip_rep(dns_data:dict, hval_data:dict, scores:dict): #PAUSED: Further investigation needed to determine if helpful
+def score_ip_rep(firewall_data:dict, scores:dict): #PAUSED: Further investigation needed to determine if helpful
     """Placeholder for IP Reputation scoring function.
     Currently unused, but can be implemented in the future.
     """
-
-    pass
+    blocked = firewall_data.get("Block", False)
+    if blocked:
+        scores['IP_Reputation'] -= 100
+        if app_config.VERBOSE:
+            print("IP Reputation Score: CRITICAL - IP is listed on a firewall blocklist. (IP_REP)", file=sys.stderr)
+    else:
+        if app_config.VERBOSE:
+            print("IP Reputation Score: No deduction - IP is not listed on firewall blocklist. (IP_REP)", file=sys.stderr)
 
 def score_whois_pattern(rdap_data:dict, scan_date: datetime, scores:dict): #TODO: IMPLEMENT
     """Placeholder for WHOIS Pattern scoring function.
@@ -594,6 +600,11 @@ def calculate_security_score(all_scans: dict, scan_date: datetime) -> dict: #CHA
         score_whois_pattern(all_scans['rdap_scan'], scan_date, scores)
     except Exception as e:
         print(f"Error in whois_pattern scan: {e}", file=sys.stderr)
+
+    try:
+        score_ip_rep(all_scans['firewall_scan'], scores)
+    except Exception as e:
+        print(f"Error in ip_rep scan: {e}", file=sys.stderr)
 
     # 3. Clamp scores between 1 and 100 after all deductions
     for key in scores:
