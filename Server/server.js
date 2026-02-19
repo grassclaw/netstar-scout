@@ -3,6 +3,7 @@ const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const { normalizeScanTarget } = require("./lib/urlSanitize");
+const { normalizeScanTarget } = require("./lib/urlSanitize");
 
 const app = express();
 
@@ -36,12 +37,46 @@ const SCORING_ENGINE_KEYS = [
 // Parse scoring engine stdout. Accepts either:
 // - New format: top-level score keys + "aggregatedScore" (from scoring_main.py)
 // - Legacy: "scores" object + "Aggregated_Score"
+// Known top-level score keys from scoring_main.py (excluding aggregatedScore).
+const SCORING_ENGINE_KEYS = [
+  "Connection_Security",
+  "Certificate_Health",
+  "DNS_Record_Health",
+  "Domain_Reputation",
+  "WHOIS_Pattern",
+  "IP_Reputation",
+  "Credential_Safety",
+];
+
+// Parse scoring engine stdout. Accepts either:
+// - New format: top-level score keys + "aggregatedScore" (from scoring_main.py)
+// - Legacy: "scores" object + "Aggregated_Score"
 function parseScoringOutput(output) {
   const jsonMatch = output.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     throw new Error("Scoring engine did not output valid JSON");
   }
   const jsonData = JSON.parse(jsonMatch[0]);
+
+  let scores = {};
+  if (jsonData.scores && typeof jsonData.scores === "object") {
+    scores = jsonData.scores;
+  } else {
+    for (const key of SCORING_ENGINE_KEYS) {
+      if (jsonData[key] != null && typeof jsonData[key] === "number") {
+        scores[key] = jsonData[key];
+      }
+    }
+  }
+
+  const aggregatedScore =
+    jsonData.aggregatedScore != null
+      ? Number(jsonData.aggregatedScore)
+      : jsonData.Aggregated_Score != null
+        ? Number(jsonData.Aggregated_Score)
+        : null;
+
+  return { scores, aggregatedScore };
 
   let scores = {};
   if (jsonData.scores && typeof jsonData.scores === "object") {
@@ -153,6 +188,7 @@ function resolvePythonScript() {
 // Main endpoint: /scan?domain=example.com OR /scan?url=https://example.com/path
 app.get("/scan", (req, res) => {
   const input = req.query.domain || req.query.url || "";
+  const input = req.query.domain || req.query.url || "";
 
   // Normalize and validate the scan target.
   // Returns 400 for invalid, empty, localhost, or plain-IP inputs.
@@ -167,7 +203,21 @@ app.get("/scan", (req, res) => {
       indicators: [],
       timestamp: Date.now(),
     });
+  // Normalize and validate the scan target.
+  // Returns 400 for invalid, empty, localhost, or plain-IP inputs.
+  // See lib/urlSanitize.js and Docs/url-sanitization-policy.md.
+  const result = normalizeScanTarget(input);
+  if (!result.ok) {
+    return res.status(400).json({
+      error: true,
+      message: result.reason,
+      safetyScore: 0,
+      aggregatedScore: 0,
+      indicators: [],
+      timestamp: Date.now(),
+    });
   }
+  const targetDomain = result.domain;
   const targetDomain = result.domain;
 
   const pythonScript = resolvePythonScript();
@@ -237,6 +287,49 @@ app.get("/scan", (req, res) => {
       });
 
       try {
+      const { scores, aggregatedScore } = parseScoringOutput(output);
+      const response = formatForExtension(scores, aggregatedScore);
+
+      // Debug: log the exact score payload we're about to return
+      try {
+        const debugPayload = {
+          request: {
+            method: req.method,
+            path: req.path,
+            originalUrl: req.originalUrl,
+            query: req.query,
+            ip: req.ip,
+            headers: {
+              "user-agent": req.get("user-agent"),
+              origin: req.get("origin"),
+              referer: req.get("referer"),
+            },
+          },
+          targetDomain,
+          input: String(input),
+          aggregatedScoreParsed: Number.isFinite(aggregatedScore) ? aggregatedScore : null,
+          response: {
+            safetyScore: response?.safetyScore,
+            aggregatedScore: response?.aggregatedScore,
+            indicatorsCount: Array.isArray(response?.indicators) ? response.indicators.length : 0,
+            indicators: Array.isArray(response?.indicators)
+              ? response.indicators.map((i) => ({
+                  id: i?.id,
+                  name: i?.name,
+                  score: i?.score,
+                  status: i?.status,
+                }))
+              : [],
+            timestamp: response?.timestamp,
+          },
+        };
+        console.log(
+          `[${new Date().toISOString()}] [scan][score-response] ${JSON.stringify(debugPayload, null, 2)}`
+        );
+      } catch {
+        // Avoid breaking /scan responses due to logging issues
+      }
+
       // Timeout after 60 seconds
       const timeout = setTimeout(() => {
         if (responded) return;
@@ -339,6 +432,19 @@ app.get("/scan", (req, res) => {
           });
         }
       }
+      } catch (e) {
+        if (!responded) {
+          responded = true;
+          res.status(500).json({
+            error: true,
+            message: e?.message || "Scoring handler error",
+            safetyScore: 0,
+            aggregatedScore: 0,
+            indicators: [],
+            timestamp: Date.now(),
+          });
+        }
+      }
     })
     .catch((err) => {
       return res.status(500).json({
@@ -372,13 +478,31 @@ app.get("/", (req, res) => {
 // Only start listening when this file is run directly (not when required by tests).
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
+// Only start listening when this file is run directly (not when required by tests).
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`NetSTAR Shield server running on port ${PORT}`);
     console.log(`Health check: http://localhost:${PORT}/health`);
     console.log(`Scan endpoint: http://localhost:${PORT}/scan?domain=example.com`);
   });
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`NetSTAR Shield server running on port ${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/health`);
+    console.log(`Scan endpoint: http://localhost:${PORT}/scan?domain=example.com`);
+  });
 
+  server.on("error", (error) => {
+    if (error.code === "EACCES") {
+      console.error(`ERROR: Permission denied. Port ${PORT} may require elevated privileges.`);
+    } else if (error.code === "EADDRINUSE") {
+      console.error(`ERROR: Port ${PORT} is already in use.`);
+    } else {
+      console.error("Server error:", error);
+    }
+    process.exit(1);
+  });
   server.on("error", (error) => {
     if (error.code === "EACCES") {
       console.error(`ERROR: Permission denied. Port ${PORT} may require elevated privileges.`);
@@ -397,7 +521,16 @@ if (require.main === module) {
       process.exit(0);
     });
   }
+  function shutdown(signal) {
+    console.log(`${signal} received, shutting down gracefully`);
+    server.close(() => {
+      console.log("Server closed");
+      process.exit(0);
+    });
+  }
 
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
 
@@ -405,7 +538,17 @@ if (require.main === module) {
     console.error("Uncaught Exception:", error);
     server.close(() => process.exit(1));
   });
+  process.on("uncaughtException", (error) => {
+    console.error("Uncaught Exception:", error);
+    server.close(() => process.exit(1));
+  });
 
+  process.on("unhandledRejection", (reason, promise) => {
+    console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  });
+}
+
+module.exports = { app };
   process.on("unhandledRejection", (reason, promise) => {
     console.error("Unhandled Rejection at:", promise, "reason:", reason);
   });
