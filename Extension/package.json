@@ -6,13 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "pack": "npm run build && cd dist && zip -r ../netstar-shield-webstore.zip . && cd ..",
     "preview": "vite preview",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
     "docs": "jsdoc -c jsdoc.config.json",
     "docs:watch": "jsdoc -c jsdoc.config.json --watch"
   },
   "dependencies": {
     "@radix-ui/react-progress": "1.1.1",
     "@radix-ui/react-slot": "1.1.1",
+    "@radix-ui/react-switch": "^1.2.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.552.0",
@@ -24,9 +27,11 @@
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.2.0",
+    "@jest/globals": "^30.2.0",
     "@tailwindcss/postcss": "^4.1.9",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.22",
+    "jest": "^30.2.0",
     "jsdoc": "^4.0.5",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.17",

@@ -42,13 +42,13 @@ export function getStatusMessage(status) {
 export function getDetailedStatusMessage(status) {
   switch (status) {
     case "excellent":
-      return "Everything looks perfect!"
+      return "You\'re Safe Here!"
     case "good":
-      return "Looking good!"
+      return "You Should Be Confident!"
     case "moderate":
-      return "Could be improved"
+      return "You Should Take Some Precaution."
     case "poor":
-      return "Needs attention"
+      return "You Might Not Be Safe."
     default:
       return "Unknown status"
   }

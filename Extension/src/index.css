@@ -369,3 +369,99 @@
     @apply rounded-full bg-gray-400;
   }
 }
+
+/* ==========================================================================
+   TEXT SIZE SLIDER (Settings → General)
+   ========================================================================== */
+/* Ensure the input exactly matches the wrapper width */
+.textsize-trackwrap .textsize-range {
+  width: 100%;
+  height: 22px;
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+.textsize-range {
+   background: transparent;
+}
+
+.textsize-range:focus {
+  outline: none;
+}
+
+/* WebKit (Chrome/Edge) */
+.textsize-range::-webkit-slider-runnable-track {
+  height: 5.5px;
+  border-radius: 9999px;
+  /* background: var(--ts-track, rgba(148, 163, 184, 0.6)); */
+}
+
+.textsize-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--ts-thumb, #0f172a);
+  border: 2px solid var(--ts-thumb-border, rgba(15, 23, 42, 0.15));
+  margin-top: -5px; /* centers thumb on 4px track */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* Firefox */
+.textsize-range::-moz-range-track {
+  height: 5.5px;
+  border-radius: 9999px;
+  /* background: var(--ts-track, rgba(148, 163, 184, 0.6)); */
+}
+
+.textsize-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--ts-thumb, #0f172a);
+  border: 2px solid var(--ts-thumb-border, rgba(15, 23, 42, 0.15));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/**
+ * Text size slider fixed layout (session change)
+ *
+ * The popup's text size setting changes `html { font-size: ... }`, which scales rem-based UI.
+ * To prevent the slider control from resizing, we lock the slider UI to fixed px sizing:
+ * - `.textsize-ui` uses a fixed font-size and fixed width.
+ * - `.textsize-trackwrap` uses fixed px width/height.
+ * - The slider input and thumb/track are styled explicitly.
+ */
+
+.textsize-ui {
+  font-size: 16px;
+
+  display: flex;
+  align-items: center;
+
+  /* tighter spacing */
+  gap: 8px;
+
+  /* smaller overall footprint */
+  width: 100px;
+  flex: 0 0 100px;
+
+  /* shift the whole control left a bit */
+  margin-right: -10px;
+
+  justify-content: flex-end;
+}
+
+.url-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+.url-scroll::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.5); /* slate-ish */
+  border-radius: 999px;
+}
+.url-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+

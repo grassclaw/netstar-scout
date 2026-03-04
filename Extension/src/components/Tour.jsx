@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { X, Settings, Search, Bell } from "lucide-react"
+import { X, Settings, Search } from "lucide-react"
 import { ThemeToggleIcon } from "@/components/ThemeToggleIcon"
 
 // Constants for button highlight IDs
@@ -10,10 +10,10 @@ const HIGHLIGHT_IDS = {
   SECURITY_SCORE: "security-score",
   SECURITY_INDICATORS: "security-indicators",
   SCAN_TAB_BUTTON: "scan-tab-button",
-  ALERTS_TAB_BUTTON: "alerts-tab-button"
+  // ALERTS_TAB_BUTTON: "alerts-tab-button"
 }
 
-export function Tour({ mode, isActive, onClose, currentTab, onNavigate, onStepChange }) {
+export function Tour({ mode, themeMode = mode, isActive, onClose, currentTab, onNavigate, onStepChange }) {
   const [currentStep, setCurrentStep] = useState(0)
   const [spotlightPos, setSpotlightPos] = useState(null)
 
@@ -46,34 +46,34 @@ export function Tour({ mode, isActive, onClose, currentTab, onNavigate, onStepCh
       highlightId: HIGHLIGHT_IDS.SCAN_TAB_BUTTON,
       position: "top"
     },
-    {
-      tab: "alerts",
-      title: "Alerts Tab",
-      description: "The Alerts tab shows you important security warnings when we detect potential threats on a website you're visiting.",
-      highlightId: HIGHLIGHT_IDS.ALERTS_TAB_BUTTON,
-      position: "top"
-    },
+    // {
+    //   tab: "alerts",
+    //   title: "Alerts Tab",
+    //   description: "The Alerts tab shows you important security warnings when we detect potential threats on a website you're visiting.",
+    //   highlightId: HIGHLIGHT_IDS.ALERTS_TAB_BUTTON,
+    //   position: "top"
+    // },
     {
       tab: "home",
-      title: "Theme Toggle",
-      description: "Switch between light and dark mode using this button. Your eyes will thank you!",
+      title: "Theme",
+      description: "Switch between light and dark mode with this button.",
       highlightId: HIGHLIGHT_IDS.THEME_TOGGLE,
       position: "bottom"
     },
     {
       tab: "home",
       title: "Settings",
-      description: "Access settings and preferences by clicking this gear icon. You can always restart this tour from there!",
+      description: "Change theme, text size, and other preferences here. You can always restart this tour from Settings!",
       highlightId: HIGHLIGHT_IDS.SETTINGS_BUTTON,
       position: "bottom"
     },
   ]
 
   const currentStepData = steps[currentStep]
-  const isButtonHighlight = currentStepData?.highlightId === HIGHLIGHT_IDS.THEME_TOGGLE || 
+  const isButtonHighlight = currentStepData?.highlightId === HIGHLIGHT_IDS.THEME_TOGGLE ||
                             currentStepData?.highlightId === HIGHLIGHT_IDS.SETTINGS_BUTTON ||
-                            currentStepData?.highlightId === HIGHLIGHT_IDS.SCAN_TAB_BUTTON ||
-                            currentStepData?.highlightId === HIGHLIGHT_IDS.ALERTS_TAB_BUTTON
+                            currentStepData?.highlightId === HIGHLIGHT_IDS.SCAN_TAB_BUTTON
+                            //|| currentStepData?.highlightId === HIGHLIGHT_IDS.ALERTS_TAB_BUTTON
 
   // Navigate to the correct tab when step changes and notify parent
   useEffect(() => {
@@ -221,13 +221,13 @@ export function Tour({ mode, isActive, onClose, currentTab, onNavigate, onStepCh
             }}
           >
             {currentStepData.highlightId === HIGHLIGHT_IDS.THEME_TOGGLE ? (
-              <ThemeToggleIcon mode={mode} />
+              <ThemeToggleIcon themeMode={themeMode} effectiveMode={mode} />
             ) : currentStepData.highlightId === HIGHLIGHT_IDS.SETTINGS_BUTTON ? (
               <Settings className={`h-4 w-4 ${mode === "dark" ? "text-slate-200" : "text-slate-700"}`} />
             ) : currentStepData.highlightId === HIGHLIGHT_IDS.SCAN_TAB_BUTTON ? (
               <Search className={`h-5 w-5 ${mode === "dark" ? "text-slate-200" : "text-slate-700"}`} />
-            ) : currentStepData.highlightId === HIGHLIGHT_IDS.ALERTS_TAB_BUTTON ? (
-              <Bell className={`h-5 w-5 ${mode === "dark" ? "text-slate-200" : "text-slate-700"}`} />
+            // ) : currentStepData.highlightId === HIGHLIGHT_IDS.ALERTS_TAB_BUTTON ? (
+            //   <Bell className={`h-5 w-5 ${mode === "dark" ? "text-slate-200" : "text-slate-700"}`} />
             ) : null}
           </div>
         </div>
@@ -287,7 +287,11 @@ export function Tour({ mode, isActive, onClose, currentTab, onNavigate, onStepCh
                   size="sm"
                   onClick={handleBack}
                   disabled={currentStep === 0}
-                  className="flex-1 h-8 text-xs"
+                  className={`flex-1 h-8 text-xs ${
+                    mode === "dark"
+                      ? "text-slate-100 border-slate-500 bg-slate-900/30 hover:bg-slate-800/60 hover:text-white"
+                      : "text-slate-800 border-slate-300 bg-white hover:bg-slate-50"
+                  }`}
                 >
                   Back
                 </Button>

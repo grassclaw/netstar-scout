@@ -361,21 +361,64 @@ def score_dom_rep(mail_data: dict, method_data: dict, rdap_data: dict, scores: d
         pass # No deduction for TLD reputation
 
 def score_cred_safety(cert_data:dict, hval_data:dict, scores:dict): #TODO: IMPLEMENT
-    """Initial function for Credential Safety scoring function.
-    Currently limited, but can be flushed out further.
-    """
+    """Scores Credential Safety of a site based on TLS, certificate, and crypto algorithms."""
+    cert_list = cert_data.get("certs", [])
+
+    # Check if certificate list exists and is not empty
+    if not cert_list or not isinstance(cert_list, list) or len(cert_list) == 0:
+        if app_config.VERBOSE:
+            print("Credential Safety: CRITICAL - No certificates found in response. (CRED_SAFETY)", file=sys.stderr)
+        scores['Credential_Safety'] -= 50
+        return
+    
+    cert_object = cert_list[0]
+
     tls_version = cert_data.get('connection', {}).get('tls_version')
     sec_flag = hval_data.get("security", 0)
+    key_algorithm = cert_object.get('public_key_algorithm')
+    sig_algorithm = cert_object.get('signature_algorithm')
 
+    # 1. TLS Version
     if tls_version not in ['TLS 1.2', 'TLS 1.3']:
         scores['Credential_Safety'] -= 50
         if app_config.VERBOSE:
             print(f"Cred Safety Score: CRITICAL - Outdated TLS version: {tls_version}. (CRED_SAFETY)", file=sys.stderr)
 
+    # 2. HSTS Header
     if (sec_flag & app_config.SECURITY_FLAGS['HSTS']) == 0:
-        scores['Credential_Safety'] -= 20 # This field also docks 20 points in conn_sec
+        scores['Credential_Safety'] -= 20
         if app_config.VERBOSE:
             print("Cred Safety Score: Significant Deduction - HSTS header missing. (CRED_SAFETY)", file=sys.stderr)
+
+    # 3. Key Algorithm
+    if key_algorithm not in ['ECDSA', 'RSA']:
+        scores['Credential_Safety'] -= 20
+        if app_config.VERBOSE:
+            print("Cred Safety Score: Significant Deduction - Certificate key algorithm missing. (CRED_SAFETY)", file=sys.stderr)   
+
+    # 4. ECDSA Checks
+    if (key_algorithm == "ECDSA"):
+        curve_name = cert_object.get('curve_name')
+        if (curve_name not in ['P-256', 'P-384', 'P-521']):
+            scores['Credential_Safety'] -= 15
+            if app_config.VERBOSE:
+                print(f"Cred Safety Score: Significant Deduction - Outdated curve: {curve_name}. (CRED_SAFETY)", file=sys.stderr)
+        if (sig_algorithm not in ['ECDSA-SHA256', 'ECDSA-SHA384', 'ECDSA-SHA512']):
+            scores['Credential_Safety'] -= 5
+            if app_config.VERBOSE:
+                print(f"Cred Safety Score: Minor Deduction - Weak signature algorithm: {sig_algorithm}. (CRED_SAFETY)", file=sys.stderr)
+
+    # 5. RSA Checks
+    if (key_algorithm == "RSA"):
+        key_size = cert_object.get('public_key_size_bits')
+        if (key_size not in [2048, 3072, 4096]):
+            scores['Credential_Safety'] -= 15
+            if app_config.VERBOSE:
+                print(f"Cred Safety Score: Significant Deduction - Outdated key size: {key_size}. (CRED_SAFETY)", file=sys.stderr)
+        if (sig_algorithm not in ['SHA256-RSA', 'SHA384-RSA', 'SHA512-RSA']):
+            scores['Credential_Safety'] -= 5
+            if app_config.VERBOSE:
+                print(f"Cred Safety Score: Minor Deduction - Weak signature algorithm: {sig_algorithm}. (CRED_SAFETY)", file=sys.stderr)
 
 def score_ip_rep(firewall_data:dict, scores:dict): #PAUSED: Further investigation needed to determine if helpful
     """Placeholder for IP Reputation scoring function.
@@ -383,7 +426,7 @@ def score_ip_rep(firewall_data:dict, scores:dict): #PAUSED: Further investigatio
     """
     blocked = firewall_data.get("Block", False)
     if blocked:
-        scores['IP_Reputation'] -= 100
+        scores['IP_Reputation'] -= 99
         if app_config.VERBOSE:
             print("IP Reputation Score: CRITICAL - IP is listed on a firewall blocklist. (IP_REP)", file=sys.stderr)
     else:

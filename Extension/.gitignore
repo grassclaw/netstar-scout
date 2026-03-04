@@ -20,6 +20,7 @@
 # production
 /build
 /dist
+netstar-shield-webstore.zip
 
 # misc
 .DS_Store
@@ -40,3 +41,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# docs
+docstrap/
+docs/jsdocs/

@@ -1,15 +1,19 @@
 {
   "manifest_version": 3,
   "name": "NetSTAR - Your Friendly Security Guide",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A friendly browser extension that helps you stay safe online by checking website security",
   "permissions": [
     "activeTab",
     "storage",
-    "tabs"
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
+  ],
+  "optional_permissions": [
+    "notifications"
   ],
   "action": {
     "default_popup": "src/index.html",
@@ -43,5 +47,12 @@
   "background": {
     "service_worker": "src/background.js",
     "type": "module"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }

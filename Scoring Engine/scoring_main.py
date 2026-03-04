@@ -1,5 +1,7 @@
+import json
 import sys
 import argparse
+import json
 import time
 from datetime import datetime
 from typing import Dict
@@ -108,6 +110,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="Get a security and infrastructure score for a target domain."
     )
+    # The -t/--target value is expected to be a pre-sanitized hostname
+    # provided by the server (no scheme, no path, no "www." prefix).
+    # All normalization and validation happens in server.js before this
+    # script is invoked.  See Docs/url-sanitization-policy.md.
     parser.add_argument(
         '-t', '--target',
         type=str,
@@ -166,22 +172,13 @@ if __name__ == '__main__':
     elapsed_time = end_time - start_time
     # ----------------------------------------------------
 
-    if app_config.VERBOSE:
-        print("\n--- Individual Scan Scores ---", file=sys.stderr)
-    for key, value in final_scores.items():
-        if key != 'Aggregated_Score':
-            print(f"\"{key:<15}\": \"{value}\"")
+    # Emit a single JSON object for the server (no text parsing needed).
+    output = {k: v for k, v in final_scores.items() if k != 'Aggregated_Score'}
+    output['aggregatedScore'] = final_scores.get('Aggregated_Score')
+    print(json.dumps(output, indent=2))
 
-    if app_config.VERBOSE:        
-        print("\n-------------------------------------------", file=sys.stderr)
-    
-    print(f"\"aggregatedScore\": \"{final_scores.get('Aggregated_Score')}\"")
     if app_config.VERBOSE:
         print("-------------------------------------------", file=sys.stderr)
-
-    # ----------------------------------------------------
-    # PRINT THE ELAPSED TIME 
-    if app_config.VERBOSE:
         print(f"Total execution time: {elapsed_time:.2f} seconds", file=sys.stderr)
         print("-------------------------------------------", file=sys.stderr)
 

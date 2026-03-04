@@ -1,0 +1,16 @@
+{
+  "name": "netstar-shield-server",
+  "version": "1.0.0",
+  "description": "NetSTAR Shield Node.js API Server",
+  "main": "server-improved.js",
+  "scripts": {
+    "start": "node server-improved.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}

@@ -1,0 +1,61 @@
+# Prevent merging to main if the full system cannot run a scan and return a result.
+# Runs on every push to main and every pull_request targeting main.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Scoring Engine dependencies
+        run: pip install -r "Scoring Engine/requirements.txt"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: Server/package-lock.json
+
+      - name: Install Server dependencies
+        run: cd Server && npm ci
+
+      - name: Run Server unit tests
+        run: cd Server && npm test
+
+      - name: Run full-system scan (E2E)
+        env:
+          USE_SCORING_TEST_DATA: "1"
+          PORT: "3000"
+        run: |
+          node Server/server.js &
+          SERVER_PID=$!
+          sleep 6
+          if ! curl -sf "http://localhost:3000/scan?domain=example.com" -o scan_out.json; then
+            echo "Scan request failed (non-2xx or connection error)"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+          kill $SERVER_PID 2>/dev/null || true
+          node -e "
+            const fs = require('fs');
+            const d = JSON.parse(fs.readFileSync('scan_out.json', 'utf8'));
+            if (d.error === true || typeof d.safetyScore !== 'number') {
+              console.error('Invalid scan response:', JSON.stringify(d, null, 2));
+              process.exit(1);
+            }
+            console.log('Full-system scan OK, safetyScore:', d.safetyScore);
+          "

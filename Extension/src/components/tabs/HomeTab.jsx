@@ -13,7 +13,7 @@ import {
   FileUser,
   NotebookText,
 } from "lucide-react";
-import { getStatusFromScore, getStatusMessage } from "@/lib/securityUtils";
+import { getStatusFromScore, getStatusMessage, getDetailedStatusMessage } from "@/lib/securityUtils";
 import { getColorClasses } from "@/lib/themeUtils";
 import { DEFAULT_INDICATOR_DATA } from "@/lib/constants";
 
@@ -64,13 +64,13 @@ const INDICATORS_OPEN_KEY = "indicatorsOpen";
  * />
  * ```
  */
-export function HomeTab({ mode, onNavigate, forceShowIndicators }) {
+export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, overrideSecurityData }) {
   /** Current website URL hostname */
   const [currentUrl, setCurrentUrl] = useState("");
   
   /** Security safety score (0-100), default is 87 */
   const [safetyScore, setSafetyScore] = useState(87);
-  
+
   /** Complete security scan data including indicators and metadata, or null if not loaded */
   const [securityData, setSecurityData] = useState(null);
 
@@ -121,17 +121,61 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators }) {
    * @memberof module:Front End~HomeTab
    */
   useEffect(() => {
-    // Get current tab URL and security data
-    if (typeof chrome !== 'undefined' && chrome.runtime) {
-      const getTabData = async () => {
+    let isMounted = true;
+
+    // Helper: display a URL string as hostname for the UI.
+    const setHostnameFromUrl = (urlString) => {
+      try {
+        const u = new URL(urlString.includes("://") ? urlString : `https://${urlString}`);
+        setCurrentUrl(u.hostname);
+      } catch {
+        setCurrentUrl("this site");
+      }
+    };
+
+    const run = async () => {
+
+      // If the popup is showing a manual scan target, prefer that over "current tab".
+      if (overrideUrl) {
+        setHostnameFromUrl(overrideUrl);
+
+        if (overrideSecurityData?.safetyScore !== undefined) {
+          setSafetyScore(overrideSecurityData.safetyScore);
+          setSecurityData(overrideSecurityData);
+          return;
+        }
+
+        // Fallback: ask background for cached/scan result for the override URL.
+        if (typeof chrome !== "undefined" && chrome.runtime) {
+          try {
+            const result = await new Promise((resolve) => {
+              chrome.runtime.sendMessage({ action: "scanUrl", url: overrideUrl }, (resp) => resolve(resp));
+            });
+
+            if (!isMounted) return;
+            if (result && !result.error && result.safetyScore !== undefined) {
+              setSafetyScore(result.safetyScore);
+              setSecurityData(result);
+            }
+          } catch (error) {
+            // Ignore and keep defaults; UI still renders.
+            console.error("Error getting manual scan data:", error);
+          }
+        }
+
+        return;
+      }
+
+      // Default behavior: Get current tab URL and security data.
+      if (typeof chrome !== "undefined" && chrome.runtime) {
         try {
           const response = await new Promise((resolve, reject) => {
             let resolved = false;
             const requestId = `getCurrentTab_${Date.now()}_${Math.random()}`;
-            
+
             // Set up a one-time message listener for the response
             const messageListener = (message) => {
-              if (message.action === 'getCurrentTabResponse' && message.requestId === requestId) {
+              if (message.action === "getCurrentTabResponse" && message.requestId === requestId) {
                 chrome.runtime.onMessage.removeListener(messageListener);
                 if (!resolved) {
                   resolved = true;
@@ -140,49 +184,56 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators }) {
                 return true;
               }
             };
-            
+
             chrome.runtime.onMessage.addListener(messageListener);
-            
+
             // Send the request
-            chrome.runtime.sendMessage({ 
-              action: 'getCurrentTab',
-              requestId: requestId 
-            }, (response) => {
-              const callbackError = chrome.runtime.lastError;
-              
-              // If we got a response synchronously, use it
-              if (response && typeof response === 'object' && response.url !== undefined) {
-                chrome.runtime.onMessage.removeListener(messageListener);
-                if (!resolved) {
-                  resolved = true;
-                  resolve(response);
-                }
-                return;
-              }
-              
-              // Check for port closed error - expected in Manifest V3 with async handlers
-              if (callbackError) {
-                const errorMsg = callbackError.message || String(callbackError);
-                if (errorMsg.includes('message port closed') || 
-                    errorMsg.includes('The message port closed before a response was received')) {
-                  // Wait for message listener to receive the response
-                  return;
-                }
-                
-                // Other fatal errors
-                if (errorMsg.includes('Receiving end does not exist') || 
-                    errorMsg.includes('Could not establish connection') ||
-                    errorMsg.includes('Extension context invalidated')) {
+            chrome.runtime.sendMessage(
+              {
+                action: "getCurrentTab",
+                requestId: requestId,
+              },
+              (response) => {
+                const callbackError = chrome.runtime.lastError;
+
+                // If we got a response synchronously, use it
+                if (response && typeof response === "object" && response.url !== undefined) {
                   chrome.runtime.onMessage.removeListener(messageListener);
                   if (!resolved) {
                     resolved = true;
-                    reject(callbackError);
+                    resolve(response);
                   }
                   return;
                 }
+
+                // Check for port closed error - expected in Manifest V3 with async handlers
+                if (callbackError) {
+                  const errorMsg = callbackError.message || String(callbackError);
+                  if (
+                    errorMsg.includes("message port closed") ||
+                    errorMsg.includes("The message port closed before a response was received")
+                  ) {
+                    // Wait for message listener to receive the response
+                    return;
+                  }
+
+                  // Other fatal errors
+                  if (
+                    errorMsg.includes("Receiving end does not exist") ||
+                    errorMsg.includes("Could not establish connection") ||
+                    errorMsg.includes("Extension context invalidated")
+                  ) {
+                    chrome.runtime.onMessage.removeListener(messageListener);
+                    if (!resolved) {
+                      resolved = true;
+                      reject(callbackError);
+                    }
+                    return;
+                  }
+                }
               }
-            });
-            
+            );
+
             // Timeout fallback
             setTimeout(() => {
               if (!resolved) {
@@ -192,19 +243,12 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators }) {
               }
             }, 3000);
           });
-          
-          if (!response) {
-            return;
-          }
-          
+
+          if (!isMounted || !response) return;
+
           if (response.url) {
-            try {
-              const url = new URL(response.url);
-              setCurrentUrl(url.hostname);
-            } catch (e) {
-              setCurrentUrl("this site");
-            }
-            
+            setHostnameFromUrl(response.url);
+
             // Update safety score from background script if available
             if (response.securityData?.safetyScore !== undefined) {
               setSafetyScore(response.securityData.safetyScore);
@@ -212,15 +256,19 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators }) {
             }
           }
         } catch (error) {
-          console.error('Error getting current tab:', error);
+          console.error("Error getting current tab:", error);
         }
-      };
-      
-      getTabData();
-    } else {
-      setCurrentUrl("example.com");
-    }
-  }, []);
+      } else {
+        setCurrentUrl("example.com");
+      }
+    };
+
+    run();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [overrideUrl, overrideSecurityData]);
 
   // Build indicators with icons + score (merge live score if provided), then sort by score asc
   // Convert indicators array to object for easier lookup by id
@@ -253,6 +301,13 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators }) {
     setShowIndicators((openState) => !openState);
   };
 
+  const SafetyScoreStatus = getStatusFromScore(safetyScore);
+  const SafetyScoreColor = getColorClasses(SafetyScoreStatus);
+  const SecurityScoreHeaderPhrase = (securityData !== undefined ? (
+    getDetailedStatusMessage(String(SafetyScoreStatus).toLowerCase())) :
+    ( "Loading URL Score"));
+
+
   return (
     <div className="p-6">
       {/* Header with friendly greeting */}
@@ -262,14 +317,22 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators }) {
             mode === "dark" ? "text-white" : "text-slate-900"
           }`}
         >
-          You're Safe Here!
+          {SecurityScoreHeaderPhrase}
         </h2>
         <p
           className={`text-sm ${
-            mode === "dark" ? "text-slate-200" : "text-brand-600"
+            mode === "dark" ? "text-slate-200" : "text-brand-900"
           }`}
         >
-          {currentUrl} is looking good
+          {securityData !== undefined ? (
+            <>
+              Scanned <span className="break-all">{currentUrl}</span>
+            </>
+          ) : (
+            <>
+              Scanning <span className="break-all">{currentUrl}</span>
+            </>
+          )}
         </p>
       </div>
 
@@ -284,12 +347,27 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators }) {
       >
         <div className="text-center">
           <div className="inline-flex items-baseline gap-2 mb-2">
-            <span 
-              key={`score-${safetyScore}`}
-              className={`text-6xl font-bold bg-gradient-to-r ${getColorClasses(getStatusFromScore(safetyScore)).gradient} bg-clip-text text-transparent`}
-            >
-              {safetyScore}
-            </span>
+            <div className="inline-flex items-baseline gap-2 mb-2">
+              {securityData == undefined ? (
+                <span
+                  className={`inline-flex items-center justify-center w-[4.25rem] h-[4.25rem] ${
+                    mode === "dark" ? "text-slate-100" : "text-brand-600"
+                  }`}
+                  aria-label="Loading safety score"
+                  role="status"
+                >
+                  <span className="w-10 h-10 border-4 border-current border-t-transparent rounded-full animate-spin" />
+                </span>
+              ) : (
+                <span
+                  key={`score-${safetyScore}`}
+                  className={`text-6xl font-bold bg-gradient-to-r ${SafetyScoreColor.gradient} bg-clip-text text-transparent`}
+                >
+                  {safetyScore}
+                </span>
+              )}
+            </div>
+
             <span
               className={`text-2xl font-medium ${
                 mode === "dark" ? "text-slate-100" : "text-brand-600"
@@ -311,7 +389,6 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators }) {
                 Math.max((safetyScore - i * 20) / 20, 0),
                 1
               );
-              const colors = getColorClasses(getStatusFromScore(safetyScore));
 
               return (
                 <div
@@ -322,7 +399,7 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators }) {
                 >
                   <div
                     className={`absolute inset-y-0 left-0 transition-all ${
-                      segmentFill > 0 ? `bg-gradient-to-r ${colors.gradient}` : ""
+                      segmentFill > 0 ? `bg-gradient-to-r ${SafetyScoreColor.gradient}` : ""
                     }`}
                     style={{ width: `${segmentFill * 100}%` }}
                   />

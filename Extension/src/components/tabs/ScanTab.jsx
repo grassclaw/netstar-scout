@@ -51,11 +51,17 @@ export function ScanTab({ mode, onScanComplete }) {
       }
     });
 
-    chrome.storage.onChanged.addListener((changes, area) => {
+    const handleStorageChange = (changes, area) => {
       if (area === "local" && changes.recentScans) {
         setRecentScans(changes.recentScans.newValue || []);
       }
-    });
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
   }, []);
   
   /**
@@ -71,7 +77,7 @@ export function ScanTab({ mode, onScanComplete }) {
     setErrorMessage(null) // Clear any previous error
 
     chrome.runtime.sendMessage(
-      { action: "scanUrl", url:scanUrl },
+      { action: "scanUrl", url: scanUrl },
       (result) => {
         setIsScanning(false);
 
@@ -83,7 +89,8 @@ export function ScanTab({ mode, onScanComplete }) {
 
         // Only navigate to home if scan was successful
         if (onScanComplete && result && !result.error) {
-          onScanComplete(scanUrl);
+          // Pass both the URL and the scan results so Home can display the manual scan.
+          onScanComplete(scanUrl, result);
         }
       }
     );
@@ -125,7 +132,7 @@ export function ScanTab({ mode, onScanComplete }) {
           </label>
           <Input
             type="text"
-            placeholder="https://example.com"
+            placeholder="example.com"
             value={scanUrl}
             onChange={(e) => {
               setScanUrl(e.target.value)
@@ -231,7 +238,7 @@ export function ScanTab({ mode, onScanComplete }) {
     </p>
   ) : (
     <div className="space-y-2">
-      {recentScans.reverse().map((site) => (
+      {[...recentScans].reverse().map((site) => (
         <button
           key={site.url}
           className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all hover:scale-[1.02] ${
@@ -241,15 +248,20 @@ export function ScanTab({ mode, onScanComplete }) {
           }`}
           onClick={() => setScanUrl(site.url.startsWith("http") ? site.url : `https://${site.url}`)}
         >
-          <span
-            className={`text-sm flex-1 text-left ${
+          {/* URL area scrolls, badge stays put */}
+          <div
+            className={`flex-1 min-w-0 overflow-x-auto whitespace-nowrap url-scroll ${
               mode === "dark" ? "text-white" : "text-slate-900"
             }`}
+            title={site.url.match(/^(?:https?:\/\/)?([^/]+)/)?.[1] || site.url}
           >
-            {site.url.match(/^(?:https?:\/\/)?([^\/]+)/)?.[1] || site.url}
-          </span>
+            <span className="text-sm">
+              {site.url.match(/^(?:https?:\/\/)?([^/]+)/)?.[1] || site.url}
+            </span>
+          </div>
+
           <Badge
-            className={`text-xs font-medium px-2 py-1 rounded-full ${
+            className={`text-xs font-medium px-2 py-1 rounded-full flex-shrink-0 ${
               site.safe === "safe"
                 ? "bg-green-100 text-green-800 border-green-300"
                 : site.safe === "warning"
@@ -257,11 +269,7 @@ export function ScanTab({ mode, onScanComplete }) {
                 : "bg-red-100 text-red-800 border-red-300"
             }`}
           >
-            {site.safe === "safe"
-              ? "Safe"
-              : site.safe === "warning"
-              ? "Warning"
-              : "Danger"}
+            {site.safe === "safe" ? "Safe" : site.safe === "warning" ? "Warning" : "Danger"}
           </Badge>
         </button>
       ))}

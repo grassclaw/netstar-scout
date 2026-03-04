@@ -161,43 +161,34 @@ The extension requires the following permissions:
 - `tabs` - Query tab information for auto-scanning
 - `<all_urls>` - Scan any website (host permissions)
 
+## Documentation
+
+In-depth guides live in the [docs/](docs/) folder:
+
+| Document | Description |
+|----------|-------------|
+| [DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md) | How the extension works, file interactions, component architecture, data flow, and development workflow. |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagrams and design patterns (mermaid sequence/flow diagrams). |
+| [THEME_GUIDE.md](docs/THEME_GUIDE.md) | How to change the color theme — brand and accent color scales in `index.css`. |
+| [CACHING_AND_MESSAGING.md](docs/CACHING_AND_MESSAGING.md) | Evolution of the caching system and `chrome.runtime` message passing. |
+| [CONTENT_STRATEGY.md](docs/CONTENT_STRATEGY.md) | Hybrid client/server content management strategy for security text. |
+| [CODE_QUALITY_ASSESSMENT.md](docs/CODE_QUALITY_ASSESSMENT.md) | Code quality review and grading. |
+| [TOUR_REVIEW.md](docs/TOUR_REVIEW.md) | Tour component implementation review and improvement notes. |
+
+For cross-cutting project docs (testing, deployment, URL sanitization policy), see [Docs/](../Docs/).
+
 ## Current Status
 
-### Implemented Features
-- Full tab-based navigation (Home, Scan, Alerts, Settings)
-- Details view with educational content
-- Interactive guided tour system
-- Light/dark theme toggle with persistent state
-- Expandable security indicators
-- Fixed-height responsive layout
-- Dynamic icon system for different security states
-- Comprehensive UI component library
+The extension is fully integrated with the Node server and Python scoring engine:
 
-### Simulated Features
-The following features are currently simulated for demonstration purposes:
-- Security scoring algorithm
-- URL scanning and analysis
-- Threat detection
-- Certificate validation
-- Domain reputation checks
-
-### Known Limitations
-- Security data is currently hardcoded/simulated
-- No real API integration for security scanning
-- Icons change based on simulated data
-- No persistent storage implementation yet
-
-## Future Enhancements
-
-- Real security API integration (Google Safe Browsing, VirusTotal)
-- Automatic background scanning on page load
-- Custom alert rules and notification preferences
-- Export security reports as PDF/JSON
-- Multi-language support
-- Advanced privacy controls
-- Security scan history with filtering
-- Whitelist/blacklist management
-- Performance optimizations
+- Real-time security scoring via the `/scan` API (certificate, DNS, HVAL, RDAP, domain reputation, credential safety, IP reputation, WHOIS)
+- Background service worker monitors tab navigation and triggers scans automatically
+- Results are cached per-domain with a configurable TTL
+- Dynamic extension icon reflects site safety (safe / warning / danger)
+- Manual URL scanning with scan history persisted in `chrome.storage`
+- Light/dark/system theme with persistent preference
+- Interactive guided tour for onboarding
+- In-page content script for security alerts
 
 ## License
 
