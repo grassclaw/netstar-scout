@@ -73,6 +73,8 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
 
   /** Complete security scan data including indicators and metadata, or null if not loaded */
   const [securityData, setSecurityData] = useState(null);
+  const [scanState, setScanState] = useState("loading"); // "loading" | "success" | "error"
+  const [scanError, setScanError] = useState(null);
 
   /**
    * State for whether the "What We Checked" indicators section is expanded
@@ -134,6 +136,9 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
     };
 
     const run = async () => {
+      setSecurityData(null); // forces loading UI every time a fetch starts
+      setScanState("loading");
+      setScanError(null);
 
       // If the popup is showing a manual scan target, prefer that over "current tab".
       if (overrideUrl) {
@@ -142,6 +147,7 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
         if (overrideSecurityData?.safetyScore !== undefined) {
           setSafetyScore(overrideSecurityData.safetyScore);
           setSecurityData(overrideSecurityData);
+          setScanState("success")
           return;
         }
 
@@ -159,6 +165,8 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
             }
           } catch (error) {
             // Ignore and keep defaults; UI still renders.
+            setScanError(response.message || "Scan failed");
+            setScanState("error");
             console.error("Error getting manual scan data:", error);
           }
         }
@@ -241,10 +249,17 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
                 resolved = true;
                 resolve(null);
               }
-            }, 3000);
+            }, 15000);
           });
 
           if (!isMounted || !response) return;
+
+          if (response.error) {
+            setSecurityData({ error: true, message: response.message || "Scan failed" });
+            setScanError(response.message || "Scan failed");
+            setScanState("error");
+            return;
+          }
 
           if (response.url) {
             setHostnameFromUrl(response.url);
@@ -257,6 +272,8 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
           }
         } catch (error) {
           console.error("Error getting current tab:", error);
+          setScanError(response.message || "Scan failed");
+          setScanState("error");
         }
       } else {
         setCurrentUrl("example.com");
@@ -303,7 +320,7 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
 
   const SafetyScoreStatus = getStatusFromScore(safetyScore);
   const SafetyScoreColor = getColorClasses(SafetyScoreStatus);
-  const SecurityScoreHeaderPhrase = (securityData !== undefined ? (
+  const SecurityScoreHeaderPhrase = (securityData ? (
     getDetailedStatusMessage(String(SafetyScoreStatus).toLowerCase())) :
     ( "Loading URL Score"));
 
@@ -324,7 +341,8 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
             mode === "dark" ? "text-slate-200" : "text-brand-900"
           }`}
         >
-          {securityData !== undefined ? (
+        
+          {securityData ? (
             <>
               Scanned <span className="break-all">{currentUrl}</span>
             </>
@@ -348,24 +366,25 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
         <div className="text-center">
           <div className="inline-flex items-baseline gap-2 mb-2">
             <div className="inline-flex items-baseline gap-2 mb-2">
-              {securityData == undefined ? (
-                <span
-                  className={`inline-flex items-center justify-center w-[4.25rem] h-[4.25rem] ${
-                    mode === "dark" ? "text-slate-100" : "text-brand-600"
-                  }`}
-                  aria-label="Loading safety score"
-                  role="status"
-                >
-                  <span className="w-10 h-10 border-4 border-current border-t-transparent rounded-full animate-spin" />
-                </span>
-              ) : (
-                <span
-                  key={`score-${safetyScore}`}
-                  className={`text-6xl font-bold bg-gradient-to-r ${SafetyScoreColor.gradient} bg-clip-text text-transparent`}
-                >
-                  {safetyScore}
-                </span>
-              )}
+
+            {scanState === "loading" ? (
+              <span
+                className={`inline-flex items-center justify-center w-[4.25rem] h-[4.25rem] ${
+                  mode === "dark" ? "text-slate-100" : "text-brand-600"
+                }`}
+                aria-label="Loading safety score"
+                role="status"
+              >
+                <span className="w-10 h-10 border-4 border-current border-t-transparent rounded-full animate-spin" />
+              </span>
+            ) : scanState === "error" ? (
+              <div className="text-sm">
+                {scanError}
+              </div>
+            ) : (
+              <Score safetyScore={safetyScore} />
+            )}
+
             </div>
 
             <span
