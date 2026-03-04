@@ -64,15 +64,26 @@ const INDICATORS_OPEN_KEY = "indicatorsOpen";
  * />
  * ```
  */
-export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, overrideSecurityData }) {
-  /** Current website URL hostname */
-  const [currentUrl, setCurrentUrl] = useState("");
-  
-  /** Security safety score (0-100), default is 87 */
-  const [safetyScore, setSafetyScore] = useState(87);
+function hostnameFromUrl(urlString) {
+  try {
+    const u = new URL(urlString.includes("://") ? urlString : `https://${urlString}`);
+    return u.hostname;
+  } catch {
+    return "this site";
+  }
+}
 
-  /** Complete security scan data including indicators and metadata, or null if not loaded */
-  const [securityData, setSecurityData] = useState(null);
+export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, overrideSecurityData }) {
+  /** Current website URL hostname. Initialize from override when landing after a manual scan. */
+  const [currentUrl, setCurrentUrl] = useState(() => (overrideUrl ? hostnameFromUrl(overrideUrl) : ""));
+
+  /** Security safety score (0-100). Initialize from override when landing after a manual scan so the score shows immediately. */
+  const [safetyScore, setSafetyScore] = useState(() =>
+    overrideSecurityData?.safetyScore !== undefined ? overrideSecurityData.safetyScore : 87
+  );
+
+  /** Complete security scan data including indicators and metadata. Initialize from override so we don't show loading after a manual scan. */
+  const [securityData, setSecurityData] = useState(() => overrideSecurityData ?? null);
 
   /**
    * State for whether the "What We Checked" indicators section is expanded
@@ -123,21 +134,11 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
   useEffect(() => {
     let isMounted = true;
 
-    // Helper: display a URL string as hostname for the UI.
-    const setHostnameFromUrl = (urlString) => {
-      try {
-        const u = new URL(urlString.includes("://") ? urlString : `https://${urlString}`);
-        setCurrentUrl(u.hostname);
-      } catch {
-        setCurrentUrl("this site");
-      }
-    };
-
     const run = async () => {
 
       // If the popup is showing a manual scan target, prefer that over "current tab".
       if (overrideUrl) {
-        setHostnameFromUrl(overrideUrl);
+        setCurrentUrl(hostnameFromUrl(overrideUrl));
 
         if (overrideSecurityData?.safetyScore !== undefined) {
           setSafetyScore(overrideSecurityData.safetyScore);
@@ -169,87 +170,30 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
       // Default behavior: Get current tab URL and security data.
       if (typeof chrome !== "undefined" && chrome.runtime) {
         try {
-          const response = await new Promise((resolve, reject) => {
-            let resolved = false;
-            const requestId = `getCurrentTab_${Date.now()}_${Math.random()}`;
+          const t0 = Date.now();
+          const TIMEOUT_MS = 12_000;
+          const response = await new Promise((resolve) => {
+            const timer = setTimeout(() => resolve(null), TIMEOUT_MS);
 
-            // Set up a one-time message listener for the response
-            const messageListener = (message) => {
-              if (message.action === "getCurrentTabResponse" && message.requestId === requestId) {
-                chrome.runtime.onMessage.removeListener(messageListener);
-                if (!resolved) {
-                  resolved = true;
-                  resolve(message.data);
-                }
-                return true;
-              }
-            };
-
-            chrome.runtime.onMessage.addListener(messageListener);
-
-            // Send the request
-            chrome.runtime.sendMessage(
-              {
-                action: "getCurrentTab",
-                requestId: requestId,
-              },
-              (response) => {
-                const callbackError = chrome.runtime.lastError;
-
-                // If we got a response synchronously, use it
-                if (response && typeof response === "object" && response.url !== undefined) {
-                  chrome.runtime.onMessage.removeListener(messageListener);
-                  if (!resolved) {
-                    resolved = true;
-                    resolve(response);
-                  }
-                  return;
-                }
-
-                // Check for port closed error - expected in Manifest V3 with async handlers
-                if (callbackError) {
-                  const errorMsg = callbackError.message || String(callbackError);
-                  if (
-                    errorMsg.includes("message port closed") ||
-                    errorMsg.includes("The message port closed before a response was received")
-                  ) {
-                    // Wait for message listener to receive the response
-                    return;
-                  }
-
-                  // Other fatal errors
-                  if (
-                    errorMsg.includes("Receiving end does not exist") ||
-                    errorMsg.includes("Could not establish connection") ||
-                    errorMsg.includes("Extension context invalidated")
-                  ) {
-                    chrome.runtime.onMessage.removeListener(messageListener);
-                    if (!resolved) {
-                      resolved = true;
-                      reject(callbackError);
-                    }
-                    return;
-                  }
-                }
-              }
-            );
-
-            // Timeout fallback
-            setTimeout(() => {
-              if (!resolved) {
-                chrome.runtime.onMessage.removeListener(messageListener);
-                resolved = true;
+            chrome.runtime.sendMessage({ action: "getCurrentTab" }, (resp) => {
+              clearTimeout(timer);
+              if (chrome.runtime.lastError) {
+                console.error("[NetSTAR] getCurrentTab error:", chrome.runtime.lastError.message);
                 resolve(null);
+                return;
               }
-            }, 3000);
+              resolve(resp ?? null);
+            });
           });
 
           if (!isMounted || !response) return;
 
           if (response.url) {
-            setHostnameFromUrl(response.url);
+            const elapsedMs = Date.now() - t0;
+            console.log("[NetSTAR][timing] popup: getCurrentTab end-to-end", elapsedMs, "ms");
 
-            // Update safety score from background script if available
+            setCurrentUrl(hostnameFromUrl(response.url));
+
             if (response.securityData?.safetyScore !== undefined) {
               setSafetyScore(response.securityData.safetyScore);
               setSecurityData(response.securityData);
