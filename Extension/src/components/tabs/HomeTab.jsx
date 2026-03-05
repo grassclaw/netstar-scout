@@ -68,8 +68,8 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
   /** Current website URL hostname */
   const [currentUrl, setCurrentUrl] = useState("");
   
-  /** Security safety score (0-100), default is 87 */
-  const [safetyScore, setSafetyScore] = useState(87);
+  /** Security safety score (0-100), default is 0 */
+  const [safetyScore, setSafetyScore] = useState(0);
 
   /** Complete security scan data including indicators and metadata, or null if not loaded */
   const [securityData, setSecurityData] = useState(null);
@@ -165,8 +165,8 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
             }
           } catch (error) {
             // Ignore and keep defaults; UI still renders.
-            setScanError(response.message || "Scan failed");
-            setScanState("error");
+            setScanError({ error: true, message: error?.message || "Scan failed" });
+            setScanState(error?.message || "Scan failed");
             console.error("Error getting manual scan data:", error);
           }
         }
@@ -247,7 +247,7 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
               if (!resolved) {
                 chrome.runtime.onMessage.removeListener(messageListener);
                 resolved = true;
-                resolve(null);
+                resolve({ error: true, message: "Timed out waiting for scan result" });
               }
             }, 15000);
           });
@@ -255,24 +255,36 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
           if (!isMounted || !response) return;
 
           if (response.error) {
-            setSecurityData({ error: true, message: response.message || "Scan failed" });
-            setScanError(response.message || "Scan failed");
+            const msg = response.error?.message || "Scan failed";
+            setSecurityData({ error: true, message: msg });
+            setScanError(msg);
             setScanState("error");
             return;
           }
 
           if (response.url) {
             setHostnameFromUrl(response.url);
-
-            // Update safety score from background script if available
-            if (response.securityData?.safetyScore !== undefined) {
-              setSafetyScore(response.securityData.safetyScore);
-              setSecurityData(response.securityData);
-            }
           }
+          // Always end loading if we got a response object back:
+          if (response.securityData) {
+            setSecurityData(response.securityData);
+
+            if (response.securityData.safetyScore !== undefined) {
+              setSafetyScore(response.securityData.safetyScore);
+            }
+
+            setScanState("success");
+            return;
+          }
+          // If the background answered but didn't include data, treat as error:
+          setSecurityData({ error: true, message: "No security data returned" });
+          setScanError("No security data returned");
+          setScanState("error");
+          return;
         } catch (error) {
           console.error("Error getting current tab:", error);
-          setScanError(response.message || "Scan failed");
+          setSecurityData({ error: true, message: error?.message || "Scan failed" });
+          setScanError(error?.message || "Scan failed");
           setScanState("error");
         }
       } else {
@@ -318,11 +330,24 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
     setShowIndicators((openState) => !openState);
   };
 
-  const SafetyScoreStatus = getStatusFromScore(safetyScore);
+  const isLoading = securityData == null;
+  const isError = securityData?.error === true;
+
+  const SafetyScoreStatus = safetyScore === 0 ? "unknown" : getStatusFromScore(safetyScore);
   const SafetyScoreColor = getColorClasses(SafetyScoreStatus);
-  const SecurityScoreHeaderPhrase = (securityData ? (
-    getDetailedStatusMessage(String(SafetyScoreStatus).toLowerCase())) :
-    ( "Loading URL Score"));
+
+  // Header text
+  const headerTitle = isLoading
+    ? "Loading URL Score"
+    : isError
+    ? "Scan failed"
+    : getDetailedStatusMessage(String(SafetyScoreStatus).toLowerCase());
+
+  const headerLine = isLoading
+    ? "Scanning"
+    : isError
+    ? (securityData.message || "We couldn't scan this site.")
+    : "Scanned";
 
 
   return (
@@ -334,23 +359,14 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
             mode === "dark" ? "text-white" : "text-slate-900"
           }`}
         >
-          {SecurityScoreHeaderPhrase}
+          {headerTitle}
         </h2>
         <p
           className={`text-sm ${
             mode === "dark" ? "text-slate-200" : "text-brand-900"
           }`}
         >
-        
-          {securityData ? (
-            <>
-              Scanned <span className="break-all">{currentUrl}</span>
-            </>
-          ) : (
-            <>
-              Scanning <span className="break-all">{currentUrl}</span>
-            </>
-          )}
+          {headerLine} <span className="break-all">{currentUrl}</span>
         </p>
       </div>
 
@@ -382,7 +398,11 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
                 {scanError}
               </div>
             ) : (
-              <Score safetyScore={safetyScore} />
+              <span
+                className={`text-6xl font-bold bg-gradient-to-r ${SafetyScoreColor.gradient} bg-clip-text text-transparent`}
+              >
+                {Number.isFinite(safetyScore) ? safetyScore : "—"}
+              </span>
             )}
 
             </div>
