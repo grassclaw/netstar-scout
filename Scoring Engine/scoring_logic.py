@@ -541,7 +541,21 @@ def score_whois_pattern(rdap_data:dict, scan_date: datetime, scores:dict): #TODO
     if app_config.VERBOSE:
         print("WHO_IS Score: Registrar name is ", registrar_name, file=sys.stderr)
 
-    #TODO: put registrar scoring here
+    # 2. Check for registrary matches from MAL_REGISTRARS list (case-insensitive substring match)
+    found_matches = False
+    for reg in app_config.MAL_REGISTRARS:
+        # We convert BOTH to lowercase to ensure "NameSilo" matches "namesilo"
+        if reg.lower() in registrar_name.lower():
+            found_matches = True
+            break
+
+    if found_matches:
+        scores['WHOIS_Pattern'] -= 10
+        if app_config.VERBOSE:
+            print("WHO_IS Score: Suspicious Registrar found: ", registrar_name, file=sys.stderr)
+    else:
+        if app_config.VERBOSE:
+            print("WHO_IS Score: Trustworthy Registrar found: ", registrar_name, file=sys.stderr)
 
 def calculate_final_score(weights, scores): #CHANGE
     """
