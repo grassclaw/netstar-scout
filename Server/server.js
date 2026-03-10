@@ -237,49 +237,6 @@ app.get("/scan", (req, res) => {
       });
 
       try {
-      const { scores, aggregatedScore } = parseScoringOutput(output);
-      const response = formatForExtension(scores, aggregatedScore);
-
-      // Debug: log the exact score payload we're about to return
-      try {
-        const debugPayload = {
-          request: {
-            method: req.method,
-            path: req.path,
-            originalUrl: req.originalUrl,
-            query: req.query,
-            ip: req.ip,
-            headers: {
-              "user-agent": req.get("user-agent"),
-              origin: req.get("origin"),
-              referer: req.get("referer"),
-            },
-          },
-          targetDomain,
-          input: String(input),
-          aggregatedScoreParsed: Number.isFinite(aggregatedScore) ? aggregatedScore : null,
-          response: {
-            safetyScore: response?.safetyScore,
-            aggregatedScore: response?.aggregatedScore,
-            indicatorsCount: Array.isArray(response?.indicators) ? response.indicators.length : 0,
-            indicators: Array.isArray(response?.indicators)
-              ? response.indicators.map((i) => ({
-                  id: i?.id,
-                  name: i?.name,
-                  score: i?.score,
-                  status: i?.status,
-                }))
-              : [],
-            timestamp: response?.timestamp,
-          },
-        };
-        console.log(
-          `[${new Date().toISOString()}] [scan][score-response] ${JSON.stringify(debugPayload, null, 2)}`
-        );
-      } catch {
-        // Avoid breaking /scan responses due to logging issues
-      }
-
       // Timeout after 60 seconds
       const timeout = setTimeout(() => {
         if (responded) return;
