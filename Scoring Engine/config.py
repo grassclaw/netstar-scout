@@ -2,13 +2,6 @@ from typing import Dict, List
 
 # --- Configuration and Constants ---
 
-# Bitmasks for Method Scan (Flag)
-METHOD_FLAGS = {
-    'HEAD': 1, 'GET': 2, 'POST': 4,
-    'PUT': 8, 'PATCH': 16, 'DELETE': 32,
-    'TRACE': 64, 'CONNECT': 128
-}
-
 # Bitmasks for HVAL Scan (Security Flag)
 SECURITY_FLAGS = {
     'HSTS': 1, 'CSP': 2, 'XCTO': 4,
@@ -34,7 +27,6 @@ API_ENDPOINTS = [
     'dns', 
     'hval', 
     'mail', 
-    'method', 
     'rdap',
     'firewall'
 ]
