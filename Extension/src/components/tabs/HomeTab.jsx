@@ -64,15 +64,26 @@ const INDICATORS_OPEN_KEY = "indicatorsOpen";
  * />
  * ```
  */
-export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, overrideSecurityData }) {
-  /** Current website URL hostname */
-  const [currentUrl, setCurrentUrl] = useState("");
-  
-  /** Security safety score (0-100), default is 0 */
-  const [safetyScore, setSafetyScore] = useState(0);
+function hostnameFromUrl(urlString) {
+  try {
+    const u = new URL(urlString.includes("://") ? urlString : `https://${urlString}`);
+    return u.hostname;
+  } catch {
+    return "this site";
+  }
+}
 
-  /** Complete security scan data including indicators and metadata, or null if not loaded */
-  const [securityData, setSecurityData] = useState(null);
+export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, overrideSecurityData }) {
+  /** Current website URL hostname. Initialize from override when landing after a manual scan. */
+  const [currentUrl, setCurrentUrl] = useState(() => (overrideUrl ? hostnameFromUrl(overrideUrl) : ""));
+
+  /** Security safety score (0-100). Initialize from override when landing after a manual scan so the score shows immediately. */
+  const [safetyScore, setSafetyScore] = useState(() =>
+    overrideSecurityData?.safetyScore !== undefined ? overrideSecurityData.safetyScore : 0
+  );
+
+  /** Complete security scan data including indicators and metadata. Initialize from override so we don't show loading after a manual scan. */
+  const [securityData, setSecurityData] = useState(() => overrideSecurityData ?? null);
   const [scanState, setScanState] = useState("loading"); // "loading" | "success" | "error"
   const [scanError, setScanError] = useState(null);
 
@@ -125,16 +136,6 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
   useEffect(() => {
     let isMounted = true;
 
-    // Helper: display a URL string as hostname for the UI.
-    const setHostnameFromUrl = (urlString) => {
-      try {
-        const u = new URL(urlString.includes("://") ? urlString : `https://${urlString}`);
-        setCurrentUrl(u.hostname);
-      } catch {
-        setCurrentUrl("this site");
-      }
-    };
-
     const run = async () => {
       setSecurityData(null); // forces loading UI every time a fetch starts
       setScanState("loading");
@@ -142,7 +143,7 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
 
       // If the popup is showing a manual scan target, prefer that over "current tab".
       if (overrideUrl) {
-        setHostnameFromUrl(overrideUrl);
+        setCurrentUrl(hostnameFromUrl(overrideUrl));
 
         if (overrideSecurityData?.safetyScore !== undefined) {
           setSafetyScore(overrideSecurityData.safetyScore);
@@ -186,14 +187,19 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
       // Default behavior: Get current tab URL and security data.
       if (typeof chrome !== "undefined" && chrome.runtime) {
         try {
+          const t0 = Date.now();
+          const TIMEOUT_MS = 12_000;
           const response = await new Promise((resolve) => {
+            const timer = setTimeout(() => resolve(null), TIMEOUT_MS);
+
             chrome.runtime.sendMessage({ action: "getCurrentTab" }, (resp) => {
-              const err = chrome.runtime.lastError;
-              if (err) {
-                resolve({ error: err.message || String(err) });
+              clearTimeout(timer);
+              if (chrome.runtime.lastError) {
+                console.error("[NetSTAR] getCurrentTab error:", chrome.runtime.lastError.message);
+                resolve(null);
                 return;
               }
-              resolve(resp);
+              resolve(resp ?? null);
             });
           });
 
@@ -209,11 +215,13 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
             return;
           }
 
-          if (response.url) setHostnameFromUrl(response.url);
+          if (response.url) {
+            const elapsedMs = Date.now() - t0;
+            console.log("[NetSTAR][timing] popup: getCurrentTab end-to-end", elapsedMs, "ms");
 
-          if (response.securityData) {
-            setSecurityData(response.securityData);
-            if (response.securityData.safetyScore !== undefined) {
+            setCurrentUrl(hostnameFromUrl(response.url));
+
+            if (response.securityData?.safetyScore !== undefined) {
               setSafetyScore(response.securityData.safetyScore);
             }
             setScanError(null);

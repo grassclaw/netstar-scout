@@ -22,17 +22,9 @@ export function registerMessageListeners() {
     if (request.action === "scanUrl") {
       (async () => {
         try {
-          // ── Manual-scan validation ────────────────────────────────────
-          // Block inputs that don't contain a letter-based TLD (e.g.
-          // ".com", ".org", ".co.uk"). This rejects:
-          //   • Single words with no dot  ("hello")
-          //   • Plain IP addresses        ("192.168.1.1", "::1")
-          //   • Strings with only numeric TLDs or no TLD at all
-          //
-          // Plain IPs are intentionally blocked for now; this may change
-          // in a future version. See Docs/url-sanitization-policy.md.
-          // The server also validates and will return 400 for anything
-          // that slips past this check.
+          // Block inputs that don't contain a letter-based TLD (e.g. ".com", ".org").
+          // Rejects single words, plain IPs, and strings with no TLD.
+          // See Docs/url-sanitization-policy.md.
           if (!/\.[a-z]{2,}/i.test(request.url)) {
             console.log("Invalid URL entered:", request.url);
             sendResponse({
@@ -44,146 +36,88 @@ export function registerMessageListeners() {
           }
 
           const result = await getCachedOrScan(request.url);
-
-          const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-          if (tabs[0]) {
-            updateIcon(tabs[0].id, result.safetyScore);
-            updateRecentScans(request.url, result.safetyScore);
-            await maybeShowRiskNotification(request.url, result.safetyScore);
-          }
-
           sendResponse(result);
+
+          // Fire-and-forget side-effects so the popup is unblocked immediately
+          void (async () => {
+            try {
+              const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+              if (tabs[0]) {
+                updateIcon(tabs[0].id, result.safetyScore);
+                updateRecentScans(request.url, result.safetyScore);
+                await maybeShowRiskNotification(request.url, result.safetyScore);
+              }
+            } catch (e) {
+              console.error("[NetSTAR] scanUrl side-effects error:", e);
+            }
+          })();
         } catch (error) {
           console.error("Error in scanUrl:", error);
           sendResponse({ error: true, message: error.message });
         }
       })();
 
-      // Return true to indicate we will send a response asynchronously
       return true;
     }
 
     if (request.action === "getCurrentTab") {
-      if (request.requestId) {
-        (async () => {
-          try {
-            const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-            let targetTab = activeTabs[0];
+      (async () => {
+        const t0 = Date.now();
+        try {
+          const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+          let targetTab = activeTabs[0];
 
-            if (
-              !targetTab ||
-              !targetTab.url ||
-              !/^https?:\/\//i.test(targetTab.url) ||
-              targetTab.url.startsWith("chrome-extension://") ||
-              targetTab.url.startsWith("chrome://") ||
-              targetTab.url.startsWith("edge://") ||
-              targetTab.url.startsWith("about:")
-            ) {
-              const allTabs = await chrome.tabs.query({ currentWindow: true });
-              for (const t of allTabs) {
-                if (
-                  t.url &&
-                  /^https?:\/\//i.test(t.url) &&
-                  !t.url.startsWith("chrome-extension://") &&
-                  !t.url.startsWith("chrome://") &&
-                  !t.url.startsWith("edge://") &&
-                  !t.url.startsWith("about:")
-                ) {
-                  targetTab = t;
-                  break;
-                }
+          if (
+            !targetTab ||
+            !targetTab.url ||
+            !/^https?:\/\//i.test(targetTab.url) ||
+            targetTab.url.startsWith("chrome-extension://") ||
+            targetTab.url.startsWith("chrome://") ||
+            targetTab.url.startsWith("edge://") ||
+            targetTab.url.startsWith("about:")
+          ) {
+            const allTabs = await chrome.tabs.query({ currentWindow: true });
+            for (const t of allTabs) {
+              if (
+                t.url &&
+                /^https?:\/\//i.test(t.url) &&
+                !t.url.startsWith("chrome-extension://") &&
+                !t.url.startsWith("chrome://") &&
+                !t.url.startsWith("edge://") &&
+                !t.url.startsWith("about:")
+              ) {
+                targetTab = t;
+                break;
               }
             }
-
-            let response;
-            if (targetTab && targetTab.url) {
-              const url = targetTab.url;
-              if (!/^https?:\/\//i.test(url)) {
-                response = { url, title: targetTab.title, securityData: null };
-              } else {
-                const result = await getCachedOrScan(url);
-                response = {
-                  url,
-                  title: targetTab.title,
-                  securityData: result || null,
-                };
-              }
-            } else {
-              response = { url: null, title: null, securityData: null };
-            }
-
-            chrome.runtime
-              .sendMessage({
-                action: "getCurrentTabResponse",
-                requestId: request.requestId,
-                data: response,
-              })
-              .catch(() => {});
-          } catch (error) {
-            console.error("Error in getCurrentTab handler:", error);
-            chrome.runtime
-              .sendMessage({
-                action: "getCurrentTabResponse",
-                requestId: request.requestId,
-                data: { url: null, title: null, securityData: null, error: error.message },
-              })
-              .catch(() => {});
           }
-        })();
-        return false;
-      } else {
-        (async () => {
-          try {
-            const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-            let targetTab = activeTabs[0];
 
-            if (
-              !targetTab ||
-              !targetTab.url ||
-              !/^https?:\/\//i.test(targetTab.url) ||
-              targetTab.url.startsWith("chrome-extension://") ||
-              targetTab.url.startsWith("chrome://") ||
-              targetTab.url.startsWith("edge://") ||
-              targetTab.url.startsWith("about:")
-            ) {
-              const allTabs = await chrome.tabs.query({ currentWindow: true });
-              for (const t of allTabs) {
-                if (
-                  t.url &&
-                  /^https?:\/\//i.test(t.url) &&
-                  !t.url.startsWith("chrome-extension://") &&
-                  !t.url.startsWith("chrome://") &&
-                  !t.url.startsWith("edge://") &&
-                  !t.url.startsWith("about:")
-                ) {
-                  targetTab = t;
-                  break;
-                }
-              }
-            }
-
-            if (targetTab && targetTab.url) {
-              const url = targetTab.url;
-              if (!/^https?:\/\//i.test(url)) {
-                sendResponse({ url, title: targetTab.title, securityData: null });
-                return;
-              }
+          let response;
+          if (targetTab && targetTab.url) {
+            const url = targetTab.url;
+            if (!/^https?:\/\//i.test(url)) {
+              response = { url, title: targetTab.title, securityData: null };
+            } else {
               const result = await getCachedOrScan(url);
-              sendResponse({
+              response = {
                 url,
                 title: targetTab.title,
                 securityData: result || null,
-              });
-            } else {
-              sendResponse({ url: null, title: null, securityData: null });
+              };
             }
-          } catch (error) {
-            console.error("Error in getCurrentTab handler:", error);
-            sendResponse({ url: null, title: null, securityData: null, error: error.message });
+          } else {
+            response = { url: null, title: null, securityData: null };
           }
-        })();
-        return true;
-      }
+
+          console.log("[NetSTAR][timing] getCurrentTab: done", Date.now() - t0, "ms");
+          sendResponse(response);
+        } catch (error) {
+          console.error("[NetSTAR] getCurrentTab error:", Date.now() - t0, "ms", error);
+          sendResponse({ url: null, title: null, securityData: null, error: error.message });
+        }
+      })();
+
+      return true;
     }
 
     return false;

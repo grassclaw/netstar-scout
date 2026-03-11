@@ -2,13 +2,6 @@ from typing import Dict, List
 
 # --- Configuration and Constants ---
 
-# Bitmasks for Method Scan (Flag)
-METHOD_FLAGS = {
-    'HEAD': 1, 'GET': 2, 'POST': 4,
-    'PUT': 8, 'PATCH': 16, 'DELETE': 32,
-    'TRACE': 64, 'CONNECT': 128
-}
-
 # Bitmasks for HVAL Scan (Security Flag)
 SECURITY_FLAGS = {
     'HSTS': 1, 'CSP': 2, 'XCTO': 4,
@@ -34,7 +27,6 @@ API_ENDPOINTS = [
     'dns', 
     'hval', 
     'mail', 
-    'method', 
     'rdap',
     'firewall'
 ]
@@ -70,3 +62,17 @@ MAL_TLDS_SLIM = [ #removed co, com, eu, uk, org, net
     "support","tel", "to", "today", "top", "tr", "tv", "ua",
     "us", "vip", "wiki", "world", "ws", "xn--q9jyb4c", "xyz"
 ]
+
+MAL_REGISTRARS = [
+    "StanCo", "Istanco", "Hangzhou Yunji", "FlokiNET", "NauNet", "OPENPROV-RU", "DomainDelights", "Navicosoft Pty", "Shock Hosting",
+    "nicenic.net", "DropCatch.com 1422",  "Dynu Systems Incorporated", "RegRU", "Hello Internet Corp", "PortlandNames.com", "Dynadot",
+    "Sav.com", "Gname", "WebNic.cc", "Mat Bao Corporation", "Immaterialism Limited", "MAXNAME-RU", "FE-RU", "温州市中网计算机技术服务有限公司",
+    "Namecheap", "Registrar R01.ru", "SPRINTNAMES-RU", "RegRU", "NIC.UA", "Namecheap", "NameSilo", "WebNic.cc", "Name SRS AB", "XServer",
+    "PDR", "OwnRegistrar", "Trunkoz", "Hostinger", "GMO", "Tucows", "Sav.com", "Realtime Register", "RU-Center", "Name.com", "Openprovider",
+    "Dominet", "GoDaddy", "Ultahost", "WebNic.cc", "河北识道网络科技有限公司", "MainReg Inc.", "Todaynic", "Eranet International" "长春市智绘网络科技有限公司",
+    "厦门三五互联信息有限公司", "南昌知乐远科技有限公司", "长沙小豆网络科技有限公司", "西部数码国际有限公司", "GKG NET", "成都垦派科技有限公司",
+    "四川域趣网络科技有限公司", "海口智慧康网络科技有限公司", "Global Domain Group", "Beijing Dongfang Ruipeng Digital Information Technology Co.",
+    "武汉物与伦比科技有限公司", "厦门纳网科技股份有限公司", "成都西维数码科技有限公司", "west263.com", "rocket"
+]
+
+

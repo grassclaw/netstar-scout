@@ -234,7 +234,7 @@ def score_conn_sec(hval_data: dict, cert_data: dict, scores: dict):
         if app_config.VERBOSE:
             print(f"HVAL Score: Significant Deduction - Outdated TLS version: {tls_version}. (CONN_SEC)", file=sys.stderr)
 
-def score_dom_rep(mail_data: dict, method_data: dict, rdap_data: dict, scores: dict): #NEW FUNCTION
+def score_dom_rep(mail_data: dict, rdap_data: dict, scores: dict): #NEW FUNCTION
     """Unifies Domain Reputation scoring from Mail, Method, and RDAP scans."""
 #ADD: tld scoring (list of top 20 suspicious, add points for gov/edu?)
 # --- Mail Scan ---
@@ -293,31 +293,6 @@ def score_dom_rep(mail_data: dict, method_data: dict, rdap_data: dict, scores: d
             scores['Domain_Reputation'] -= 12
             if app_config.VERBOSE:
                 print(f"Mail Score: Deduction - SPF policy is too permissive ('{spf_string[-4:]}'). (DOM_REP)", file=sys.stderr)
-
-    # --- Method Scan ---
-    # 1. Check for Dangerous Methods (Major Deductions)
-    flag = method_data.get("flag", 0)
-
-    # CONNECT AND PATCH (128, 16) - Tunneling/Modification Risk
-    if flag & (app_config.METHOD_FLAGS['CONNECT'] | app_config.METHOD_FLAGS['PATCH']):
-        scores['Domain_Reputation'] -= 7
-        if app_config.VERBOSE:
-            print("Method Score: Deduction - possible modification/tunneling risk (CONNECT and/or PATCH). (DOM_REP)", file=sys.stderr)
-
-    # PUT, DELETE, and TRACE (8, 32, 64) - Editing Risk
-    if flag & (app_config.METHOD_FLAGS['TRACE'] | app_config.METHOD_FLAGS['DELETE'] | app_config.METHOD_FLAGS['PUT']):
-        scores['Domain_Reputation'] -= 20
-        if app_config.VERBOSE:
-            print("Method Score: Major Deduction - DELETE, TRACE, and/or PUT methods enabled. (DOM_REP)", file=sys.stderr)
-
-    # 2. Optimal Check (Positive Bonus)
-    # Optimal for a public web page is usually only HEAD (1) and GET (2), resulting in flag 3.
-    if flag == 3:
-        if app_config.VERBOSE:
-            print("Method Score: Optimal - Only HEAD and GET methods enabled. (DOM_REP)", file=sys.stderr)
-    elif flag == 7:
-        if app_config.VERBOSE:
-            print("Method Score: Acceptable - HEAD, GET, and POST methods enabled. (DOM_REP)", file=sys.stderr)
 
     # --- RDAP Scan ---
     nameservers = rdap_data[0].get("nameserver", [])
@@ -541,7 +516,21 @@ def score_whois_pattern(rdap_data:dict, scan_date: datetime, scores:dict): #TODO
     if app_config.VERBOSE:
         print("WHO_IS Score: Registrar name is ", registrar_name, file=sys.stderr)
 
-    #TODO: put registrar scoring here
+    # 2. Check for registrary matches from MAL_REGISTRARS list (case-insensitive substring match)
+    found_matches = False
+    for reg in app_config.MAL_REGISTRARS:
+        # We convert BOTH to lowercase to ensure "NameSilo" matches "namesilo"
+        if reg.lower() in registrar_name.lower():
+            found_matches = True
+            break
+
+    if found_matches:
+        scores['WHOIS_Pattern'] -= 10
+        if app_config.VERBOSE:
+            print("WHO_IS Score: Suspicious Registrar found: ", registrar_name, file=sys.stderr)
+    else:
+        if app_config.VERBOSE:
+            print("WHO_IS Score: Trustworthy Registrar found: ", registrar_name, file=sys.stderr)
 
 def calculate_final_score(weights, scores): #CHANGE
     """
@@ -630,7 +619,7 @@ def calculate_security_score(all_scans: dict, scan_date: datetime) -> dict: #CHA
         print(f"Error in conn_sec scan: {e}", file=sys.stderr)
 
     try:
-        score_dom_rep(all_scans['mail_scan'], all_scans['method_scan'], all_scans['rdap_scan'], scores)
+        score_dom_rep(all_scans['mail_scan'], all_scans['rdap_scan'], scores)
     except Exception as e:
         print(f"Error in dom_rep scan: {e}", file=sys.stderr)
 
