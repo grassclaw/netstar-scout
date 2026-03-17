@@ -79,11 +79,13 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
 
   /** Security safety score (0-100). Initialize from override when landing after a manual scan so the score shows immediately. */
   const [safetyScore, setSafetyScore] = useState(() =>
-    overrideSecurityData?.safetyScore !== undefined ? overrideSecurityData.safetyScore : 87
+    overrideSecurityData?.safetyScore !== undefined ? overrideSecurityData.safetyScore : 0
   );
 
   /** Complete security scan data including indicators and metadata. Initialize from override so we don't show loading after a manual scan. */
   const [securityData, setSecurityData] = useState(() => overrideSecurityData ?? null);
+  const [scanState, setScanState] = useState("loading"); // "loading" | "success" | "error"
+  const [scanError, setScanError] = useState(null);
 
   /**
    * State for whether the "What We Checked" indicators section is expanded
@@ -135,6 +137,9 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
     let isMounted = true;
 
     const run = async () => {
+      setSecurityData(null); // forces loading UI every time a fetch starts
+      setScanState("loading");
+      setScanError(null);
 
       // If the popup is showing a manual scan target, prefer that over "current tab".
       if (overrideUrl) {
@@ -143,6 +148,7 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
         if (overrideSecurityData?.safetyScore !== undefined) {
           setSafetyScore(overrideSecurityData.safetyScore);
           setSecurityData(overrideSecurityData);
+          setScanState("success")
           return;
         }
 
@@ -157,10 +163,21 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
             if (result && !result.error && result.safetyScore !== undefined) {
               setSafetyScore(result.safetyScore);
               setSecurityData(result);
+              setScanError(null);
+              setScanState("success");
+            } else {
+              const msg = result?.message || result?.error || "Scan failed";
+              setSecurityData({ error: true, message: msg });
+              setScanError(msg);
+              setScanState("error");
             }
           } catch (error) {
-            // Ignore and keep defaults; UI still renders.
             console.error("Error getting manual scan data:", error);
+            const msg = error?.message || "Scan failed";
+
+            setSecurityData({ error: true, message: msg });
+            setScanError(msg);
+            setScanState("error");
           }
         }
 
@@ -188,6 +205,16 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
 
           if (!isMounted || !response) return;
 
+          if (response.error) {
+            const msg = typeof response.error === "string"
+              ? response.error
+              : (response.message || "Scan failed");
+            setSecurityData({ error: true, message: msg });
+            setScanError(msg);
+            setScanState("error");
+            return;
+          }
+
           if (response.url) {
             const elapsedMs = Date.now() - t0;
             console.log("[NetSTAR][timing] popup: getCurrentTab end-to-end", elapsedMs, "ms");
@@ -196,11 +223,22 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
 
             if (response.securityData?.safetyScore !== undefined) {
               setSafetyScore(response.securityData.safetyScore);
-              setSecurityData(response.securityData);
             }
+            setScanError(null);
+            setScanState("success");
+            return;
           }
+
+          // Background responded but no data — show error instead of spinning forever
+          const msg = "No security data returned";
+          setSecurityData({ error: true, message: msg });
+          setScanError(msg);
+          setScanState("error");
         } catch (error) {
-          console.error("Error getting current tab:", error);
+          const msg = error?.message || "Scan failed";
+          setSecurityData({ error: true, message: msg });
+          setScanError(msg);
+          setScanState("error");
         }
       } else {
         setCurrentUrl("example.com");
@@ -245,11 +283,24 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
     setShowIndicators((openState) => !openState);
   };
 
-  const SafetyScoreStatus = getStatusFromScore(safetyScore);
+  const isLoading = securityData == null;
+  const isError = securityData?.error === true;
+
+  const SafetyScoreStatus = safetyScore === 0 ? "unknown" : getStatusFromScore(safetyScore);
   const SafetyScoreColor = getColorClasses(SafetyScoreStatus);
-  const SecurityScoreHeaderPhrase = (securityData !== undefined ? (
-    getDetailedStatusMessage(String(SafetyScoreStatus).toLowerCase())) :
-    ( "Loading URL Score"));
+
+  // Header text
+  const headerTitle = isLoading
+    ? "Loading URL Score"
+    : isError
+    ? "Scan failed"
+    : getDetailedStatusMessage(String(SafetyScoreStatus).toLowerCase());
+
+  const headerLine = isLoading
+    ? "Scanning"
+    : isError
+    ? (securityData.message || "We couldn't scan this site.")
+    : "Scanned";
 
 
   return (
@@ -261,22 +312,14 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
             mode === "dark" ? "text-white" : "text-slate-900"
           }`}
         >
-          {SecurityScoreHeaderPhrase}
+          {headerTitle}
         </h2>
         <p
           className={`text-sm ${
             mode === "dark" ? "text-slate-200" : "text-brand-900"
           }`}
         >
-          {securityData !== undefined ? (
-            <>
-              Scanned <span className="break-all">{currentUrl}</span>
-            </>
-          ) : (
-            <>
-              Scanning <span className="break-all">{currentUrl}</span>
-            </>
-          )}
+          {headerLine} <span className="break-all">{currentUrl}</span>
         </p>
       </div>
 
@@ -292,24 +335,29 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
         <div className="text-center">
           <div className="inline-flex items-baseline gap-2 mb-2">
             <div className="inline-flex items-baseline gap-2 mb-2">
-              {securityData == undefined ? (
-                <span
-                  className={`inline-flex items-center justify-center w-[4.25rem] h-[4.25rem] ${
-                    mode === "dark" ? "text-slate-100" : "text-brand-600"
-                  }`}
-                  aria-label="Loading safety score"
-                  role="status"
-                >
-                  <span className="w-10 h-10 border-4 border-current border-t-transparent rounded-full animate-spin" />
-                </span>
-              ) : (
-                <span
-                  key={`score-${safetyScore}`}
-                  className={`text-6xl font-bold bg-gradient-to-r ${SafetyScoreColor.gradient} bg-clip-text text-transparent`}
-                >
-                  {safetyScore}
-                </span>
-              )}
+
+            {scanState === "loading" ? (
+              <span
+                className={`inline-flex items-center justify-center w-[4.25rem] h-[4.25rem] ${
+                  mode === "dark" ? "text-slate-100" : "text-brand-600"
+                }`}
+                aria-label="Loading safety score"
+                role="status"
+              >
+                <span className="w-10 h-10 border-4 border-current border-t-transparent rounded-full animate-spin" />
+              </span>
+            ) : scanState === "error" ? (
+              <div className="text-sm">
+                {scanError}
+              </div>
+            ) : (
+              <span
+                className={`text-6xl font-bold bg-gradient-to-r ${SafetyScoreColor.gradient} bg-clip-text text-transparent`}
+              >
+                {Number.isFinite(safetyScore) ? safetyScore : "—"}
+              </span>
+            )}
+
             </div>
 
             <span
