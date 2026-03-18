@@ -36,11 +36,18 @@ jobs:
       - name: Run Server unit tests
         run: cd Server && npm test
 
+      - name: Install Extension dependencies
+        run: cd Extension && npm ci
+
+      - name: Run Extension unit tests
+        run: cd Extension && npm test
+
       - name: Run full-system scan (E2E)
         env:
           USE_SCORING_TEST_DATA: "1"
           PORT: "3000"
         run: |
+          E2E_START=$(date +%s)
           node Server/server.js &
           SERVER_PID=$!
           sleep 6
@@ -59,3 +66,6 @@ jobs:
             }
             console.log('Full-system scan OK, safetyScore:', d.safetyScore);
           "
+          E2E_END=$(date +%s)
+          E2E_DURATION=$((E2E_END - E2E_START))
+          echo "E2E test duration: ${E2E_DURATION}s"

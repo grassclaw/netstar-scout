@@ -64,15 +64,28 @@ const INDICATORS_OPEN_KEY = "indicatorsOpen";
  * />
  * ```
  */
-export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, overrideSecurityData }) {
-  /** Current website URL hostname */
-  const [currentUrl, setCurrentUrl] = useState("");
-  
-  /** Security safety score (0-100), default is 87 */
-  const [safetyScore, setSafetyScore] = useState(87);
+function hostnameFromUrl(urlString) {
+  try {
+    const u = new URL(urlString.includes("://") ? urlString : `https://${urlString}`);
+    return u.hostname;
+  } catch {
+    return "this site";
+  }
+}
 
-  /** Complete security scan data including indicators and metadata, or null if not loaded */
-  const [securityData, setSecurityData] = useState(null);
+export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, overrideSecurityData }) {
+  /** Current website URL hostname. Initialize from override when landing after a manual scan. */
+  const [currentUrl, setCurrentUrl] = useState(() => (overrideUrl ? hostnameFromUrl(overrideUrl) : ""));
+
+  /** Security safety score (0-100). Initialize from override when landing after a manual scan so the score shows immediately. */
+  const [safetyScore, setSafetyScore] = useState(() =>
+    overrideSecurityData?.safetyScore !== undefined ? overrideSecurityData.safetyScore : 0
+  );
+
+  /** Complete security scan data including indicators and metadata. Initialize from override so we don't show loading after a manual scan. */
+  const [securityData, setSecurityData] = useState(() => overrideSecurityData ?? null);
+  const [scanState, setScanState] = useState("loading"); // "loading" | "success" | "error"
+  const [scanError, setScanError] = useState(null);
 
   /**
    * State for whether the "What We Checked" indicators section is expanded
@@ -123,25 +136,19 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
   useEffect(() => {
     let isMounted = true;
 
-    // Helper: display a URL string as hostname for the UI.
-    const setHostnameFromUrl = (urlString) => {
-      try {
-        const u = new URL(urlString.includes("://") ? urlString : `https://${urlString}`);
-        setCurrentUrl(u.hostname);
-      } catch {
-        setCurrentUrl("this site");
-      }
-    };
-
     const run = async () => {
+      setSecurityData(null); // forces loading UI every time a fetch starts
+      setScanState("loading");
+      setScanError(null);
 
       // If the popup is showing a manual scan target, prefer that over "current tab".
       if (overrideUrl) {
-        setHostnameFromUrl(overrideUrl);
+        setCurrentUrl(hostnameFromUrl(overrideUrl));
 
         if (overrideSecurityData?.safetyScore !== undefined) {
           setSafetyScore(overrideSecurityData.safetyScore);
           setSecurityData(overrideSecurityData);
+          setScanState("success")
           return;
         }
 
@@ -156,10 +163,21 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
             if (result && !result.error && result.safetyScore !== undefined) {
               setSafetyScore(result.safetyScore);
               setSecurityData(result);
+              setScanError(null);
+              setScanState("success");
+            } else {
+              const msg = result?.message || result?.error || "Scan failed";
+              setSecurityData({ error: true, message: msg });
+              setScanError(msg);
+              setScanState("error");
             }
           } catch (error) {
-            // Ignore and keep defaults; UI still renders.
             console.error("Error getting manual scan data:", error);
+            const msg = error?.message || "Scan failed";
+
+            setSecurityData({ error: true, message: msg });
+            setScanError(msg);
+            setScanState("error");
           }
         }
 
@@ -169,94 +187,58 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
       // Default behavior: Get current tab URL and security data.
       if (typeof chrome !== "undefined" && chrome.runtime) {
         try {
-          const response = await new Promise((resolve, reject) => {
-            let resolved = false;
-            const requestId = `getCurrentTab_${Date.now()}_${Math.random()}`;
+          const t0 = Date.now();
+          const TIMEOUT_MS = 12_000;
+          const response = await new Promise((resolve) => {
+            const timer = setTimeout(() => resolve(null), TIMEOUT_MS);
 
-            // Set up a one-time message listener for the response
-            const messageListener = (message) => {
-              if (message.action === "getCurrentTabResponse" && message.requestId === requestId) {
-                chrome.runtime.onMessage.removeListener(messageListener);
-                if (!resolved) {
-                  resolved = true;
-                  resolve(message.data);
-                }
-                return true;
-              }
-            };
-
-            chrome.runtime.onMessage.addListener(messageListener);
-
-            // Send the request
-            chrome.runtime.sendMessage(
-              {
-                action: "getCurrentTab",
-                requestId: requestId,
-              },
-              (response) => {
-                const callbackError = chrome.runtime.lastError;
-
-                // If we got a response synchronously, use it
-                if (response && typeof response === "object" && response.url !== undefined) {
-                  chrome.runtime.onMessage.removeListener(messageListener);
-                  if (!resolved) {
-                    resolved = true;
-                    resolve(response);
-                  }
-                  return;
-                }
-
-                // Check for port closed error - expected in Manifest V3 with async handlers
-                if (callbackError) {
-                  const errorMsg = callbackError.message || String(callbackError);
-                  if (
-                    errorMsg.includes("message port closed") ||
-                    errorMsg.includes("The message port closed before a response was received")
-                  ) {
-                    // Wait for message listener to receive the response
-                    return;
-                  }
-
-                  // Other fatal errors
-                  if (
-                    errorMsg.includes("Receiving end does not exist") ||
-                    errorMsg.includes("Could not establish connection") ||
-                    errorMsg.includes("Extension context invalidated")
-                  ) {
-                    chrome.runtime.onMessage.removeListener(messageListener);
-                    if (!resolved) {
-                      resolved = true;
-                      reject(callbackError);
-                    }
-                    return;
-                  }
-                }
-              }
-            );
-
-            // Timeout fallback
-            setTimeout(() => {
-              if (!resolved) {
-                chrome.runtime.onMessage.removeListener(messageListener);
-                resolved = true;
+            chrome.runtime.sendMessage({ action: "getCurrentTab" }, (resp) => {
+              clearTimeout(timer);
+              if (chrome.runtime.lastError) {
+                console.error("[NetSTAR] getCurrentTab error:", chrome.runtime.lastError.message);
                 resolve(null);
+                return;
               }
-            }, 3000);
+              resolve(resp ?? null);
+            });
           });
 
           if (!isMounted || !response) return;
 
-          if (response.url) {
-            setHostnameFromUrl(response.url);
+          if (response.error) {
+            const msg = typeof response.error === "string"
+              ? response.error
+              : (response.message || "Scan failed");
+            setSecurityData({ error: true, message: msg });
+            setScanError(msg);
+            setScanState("error");
+            return;
+          }
 
-            // Update safety score from background script if available
+          if (response.url) {
+            const elapsedMs = Date.now() - t0;
+            console.log("[NetSTAR][timing] popup: getCurrentTab end-to-end", elapsedMs, "ms");
+
+            setCurrentUrl(hostnameFromUrl(response.url));
+
             if (response.securityData?.safetyScore !== undefined) {
               setSafetyScore(response.securityData.safetyScore);
-              setSecurityData(response.securityData);
             }
+            setScanError(null);
+            setScanState("success");
+            return;
           }
+
+          // Background responded but no data — show error instead of spinning forever
+          const msg = "No security data returned";
+          setSecurityData({ error: true, message: msg });
+          setScanError(msg);
+          setScanState("error");
         } catch (error) {
-          console.error("Error getting current tab:", error);
+          const msg = error?.message || "Scan failed";
+          setSecurityData({ error: true, message: msg });
+          setScanError(msg);
+          setScanState("error");
         }
       } else {
         setCurrentUrl("example.com");
@@ -301,11 +283,24 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
     setShowIndicators((openState) => !openState);
   };
 
-  const SafetyScoreStatus = getStatusFromScore(safetyScore);
+  const isLoading = securityData == null;
+  const isError = securityData?.error === true;
+
+  const SafetyScoreStatus = safetyScore === 0 ? "unknown" : getStatusFromScore(safetyScore);
   const SafetyScoreColor = getColorClasses(SafetyScoreStatus);
-  const SecurityScoreHeaderPhrase = (securityData !== undefined ? (
-    getDetailedStatusMessage(String(SafetyScoreStatus).toLowerCase())) :
-    ( "Loading URL Score"));
+
+  // Header text
+  const headerTitle = isLoading
+    ? "Loading URL Score"
+    : isError
+    ? "Scan failed"
+    : getDetailedStatusMessage(String(SafetyScoreStatus).toLowerCase());
+
+  const headerLine = isLoading
+    ? "Scanning"
+    : isError
+    ? (securityData.message || "We couldn't scan this site.")
+    : "Scanned";
 
 
   return (
@@ -317,22 +312,14 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
             mode === "dark" ? "text-white" : "text-slate-900"
           }`}
         >
-          {SecurityScoreHeaderPhrase}
+          {headerTitle}
         </h2>
         <p
           className={`text-sm ${
             mode === "dark" ? "text-slate-200" : "text-brand-900"
           }`}
         >
-          {securityData !== undefined ? (
-            <>
-              Scanned <span className="break-all">{currentUrl}</span>
-            </>
-          ) : (
-            <>
-              Scanning <span className="break-all">{currentUrl}</span>
-            </>
-          )}
+          {headerLine} <span className="break-all">{currentUrl}</span>
         </p>
       </div>
 
@@ -348,24 +335,29 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
         <div className="text-center">
           <div className="inline-flex items-baseline gap-2 mb-2">
             <div className="inline-flex items-baseline gap-2 mb-2">
-              {securityData == undefined ? (
-                <span
-                  className={`inline-flex items-center justify-center w-[4.25rem] h-[4.25rem] ${
-                    mode === "dark" ? "text-slate-100" : "text-brand-600"
-                  }`}
-                  aria-label="Loading safety score"
-                  role="status"
-                >
-                  <span className="w-10 h-10 border-4 border-current border-t-transparent rounded-full animate-spin" />
-                </span>
-              ) : (
-                <span
-                  key={`score-${safetyScore}`}
-                  className={`text-6xl font-bold bg-gradient-to-r ${SafetyScoreColor.gradient} bg-clip-text text-transparent`}
-                >
-                  {safetyScore}
-                </span>
-              )}
+
+            {scanState === "loading" ? (
+              <span
+                className={`inline-flex items-center justify-center w-[4.25rem] h-[4.25rem] ${
+                  mode === "dark" ? "text-slate-100" : "text-brand-600"
+                }`}
+                aria-label="Loading safety score"
+                role="status"
+              >
+                <span className="w-10 h-10 border-4 border-current border-t-transparent rounded-full animate-spin" />
+              </span>
+            ) : scanState === "error" ? (
+              <div className="text-sm">
+                {scanError}
+              </div>
+            ) : (
+              <span
+                className={`text-6xl font-bold bg-gradient-to-r ${SafetyScoreColor.gradient} bg-clip-text text-transparent`}
+              >
+                {Number.isFinite(safetyScore) ? safetyScore : "—"}
+              </span>
+            )}
+
             </div>
 
             <span
