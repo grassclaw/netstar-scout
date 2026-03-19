@@ -452,7 +452,7 @@ export function SettingsTab({
             <select
               value={themeMode}
               onChange={(e) => onThemeModeChange?.(e.target.value)}
-              className={`text-sm rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500 ${
+              className={`text-sm flex-1 min-w-0 w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500 ${
                 mode === "dark"
                   ? "border-slate-600 bg-slate-800 text-white"
                   : "border-slate-300 bg-white text-slate-900"
