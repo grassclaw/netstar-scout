@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NetSTAR - Your Friendly Security Guide",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A friendly browser extension that helps you stay safe online by checking website security",
   "permissions": [
     "activeTab",

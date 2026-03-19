@@ -10,6 +10,7 @@ For a full project overview and quick start, see the [root README](../../README.
 
 | Document | Description |
 |----------|-------------|
+| [project-overview.md](project-overview.md) | Non-technical and technical overview of what NetSTAR Shield scans, what it checks, scope boundaries, and FAQ. |
 | [extension-server-flow.md](extension-server-flow.md) | How the Chrome extension, Node server, and Python scoring engine work together — data flow, response schema, flavor text, caching guidance. |
 | [url-sanitization-policy.md](url-sanitization-policy.md) | Single source of truth for how scan targets are normalized and validated across the Extension, Server, and Scoring Engine. |
 | [testing.md](testing.md) | Unified testing guide — how to run tests for every layer and what CI covers. |
