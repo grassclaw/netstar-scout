@@ -9,15 +9,15 @@ graph TB
   subgraph browserLayer [BrowserLayer]
     direction TB
     user[User]
-    popup[ExtensionPopupUI_(React)]
-    sw[BackgroundServiceWorker_(MV3)]
-    cs[ContentScript_(InPageOverlay)]
+    popup["ExtensionPopupUI (React)"]
+    sw["BackgroundServiceWorker (MV3)"]
+    cs["ContentScript (InPageOverlay)"]
 
-    storageLocal[chrome.storage.local]
-    storageSync[chrome.storage.sync]
-    actionIcon[chrome.action]
-    notif[chrome.notifications]
-    tabsApi[chrome.tabs]
+    storageLocal["chrome.storage.local"]
+    storageSync["chrome.storage.sync"]
+    actionIcon["chrome.action"]
+    notif["chrome.notifications"]
+    tabsApi["chrome.tabs"]
 
     user --> popup
     user --> tabsApi
@@ -28,23 +28,23 @@ graph TB
     sw <-->|"cache,recentScans,toggles"| storageLocal
     popup <-->|"theme,textSize"| storageSync
     sw -->|"setIcon"| actionIcon
-    sw -->|"create_notification_(optional)"| notif
+    sw -->|"create_notification (optional)"| notif
   end
 
   subgraph serverLayer [ServerLayer_(SameHost)]
     direction TB
-    node[NodeExpressServer_(Server/server.js)]
-    py[PythonScoringEngine_(Scoring_Engine/scoring_main.py)]
-    node -->|"spawn_subprocess_stdout(JSON)"| py
+    node["NodeExpressServer (Server/server.js)"]
+    py["PythonScoringEngine (Scoring Engine/scoring_main.py)"]
+    node -->|"spawn_subprocess stdout(JSON)"| py
   end
 
   subgraph externalLayer [ExternalLayer]
     direction TB
-    netstar[w4.netstar.dev]
+    netstar["w4.netstar.dev"]
   end
 
-  sw -->|"HTTP_fetch_GET_/scan"| node
-  py -->|"HTTPS_curl_concurrent"| netstar
+  sw -->|"HTTP fetch GET /scan"| node
+  py -->|"HTTPS curl concurrent"| netstar
 ```
 
 ## Diagram 2 — Scan Request Lifecycle (Auto-Scan + Side Effects)
@@ -53,15 +53,15 @@ graph TB
 sequenceDiagram
   participant User
   participant Browser
-  participant Tabs as chrome.tabs
+  participant Tabs as "chrome.tabs"
   participant SW as BackgroundServiceWorker
-  participant Store as chrome.storage.local
+  participant Store as "chrome.storage.local"
   participant Node as NodeExpressServer
   participant Py as PythonScoringEngine
-  participant NetSTAR as w4.netstar.dev
-  participant Icon as chrome.action
+  participant NetSTAR as "w4.netstar.dev"
+  participant Icon as "chrome.action"
   participant CS as ContentScript
-  participant Notif as chrome.notifications
+  participant Notif as "chrome.notifications"
 
   User->>Browser: Navigate_to_URL
   Browser->>Tabs: tab_load_complete
@@ -76,22 +76,22 @@ sequenceDiagram
     Node->>Py: spawn(scoring_main.py_-t_example.com)
 
     par fetch_cert
-      Py->>NetSTAR: GET_/cert/example.com
+      Py->>NetSTAR: GET /cert/example.com
     and fetch_dns
-      Py->>NetSTAR: GET_/dns/example.com?A&AAAA&CNAME&DNS&MX&TXT
+      Py->>NetSTAR: GET "/dns/example.com?A&AAAA&CNAME&DNS&MX&TXT"
     and fetch_hval
-      Py->>NetSTAR: GET_/hval/example.com
+      Py->>NetSTAR: GET /hval/example.com
     and fetch_mail
-      Py->>NetSTAR: GET_/mail/example.com
+      Py->>NetSTAR: GET /mail/example.com
     and fetch_rdap
-      Py->>NetSTAR: POST_/rdap {"host":"example.com","full":true}
+      Py->>NetSTAR: POST "/rdap {host: example.com, full: true}"
     and fetch_firewall
-      Py->>NetSTAR: GET_/firewall/example.com
+      Py->>NetSTAR: GET /firewall/example.com
     end
 
     NetSTAR-->>Py: JSON_payloads
     Py-->>Node: stdout(JSON_scores+aggregatedScore)
-    Node-->>SW: JSON({safetyScore,indicators,timestamp})
+    Node-->>SW: "JSON {safetyScore, indicators, timestamp}"
     SW->>Store: set(cacheKey,result)
   end
 
@@ -110,7 +110,7 @@ sequenceDiagram
 graph LR
   subgraph popupUI [PopupUI_(React)]
     direction TB
-    popupRoot[popup.jsx]
+    popupRoot["popup.jsx"]
     tabHome[HomeTab]
     tabScan[ScanTab]
     tabDetails[DetailsTab]
@@ -126,16 +126,16 @@ graph LR
 
   subgraph serviceWorker [BackgroundServiceWorker]
     direction TB
-    bgEntry[background.js]
-    bgMessages[background/messages.js]
-    bgTabs[background/tabs.js]
-    bgScan[background/scan.js]
-    bgIcon[background/icon.js]
-    bgRecent[background/recentScans.js]
-    bgNotif[background/notifications.js]
-    bgInstall[background/install.js]
-    bgNormalize[background/urlNormalize.js]
-    bgConst[background/constants.js]
+    bgEntry["background.js"]
+    bgMessages["background/messages.js"]
+    bgTabs["background/tabs.js"]
+    bgScan["background/scan.js"]
+    bgIcon["background/icon.js"]
+    bgRecent["background/recentScans.js"]
+    bgNotif["background/notifications.js"]
+    bgInstall["background/install.js"]
+    bgNormalize["background/urlNormalize.js"]
+    bgConst["background/constants.js"]
 
     bgEntry --> bgInstall
     bgEntry --> bgTabs
@@ -160,8 +160,8 @@ graph LR
 
   subgraph inPage [InPage]
     direction TB
-    contentEntry[content.js]
-    overlay[ShadowDOM_Overlay]
+    contentEntry["content.js"]
+    overlay["ShadowDOM_Overlay"]
     contentEntry --> overlay
   end
 
@@ -174,17 +174,17 @@ graph LR
 ```mermaid
 graph TB
   target[TargetDomain]
-  scoringMain[scoring_main.py]
-  fetcher[data_fetch.py_(curl+ThreadPoolExecutor)]
-  logic[scoring_logic.py]
-  cfg[config.py_(BASE_URL,API_ENDPOINTS,WEIGHTS)]
+  scoringMain["scoring_main.py"]
+  fetcher["data_fetch.py (curl + ThreadPoolExecutor)"]
+  logic["scoring_logic.py"]
+  cfg["config.py (BASE_URL, API_ENDPOINTS, WEIGHTS)"]
 
   target --> scoringMain
   scoringMain --> fetcher
   scoringMain --> logic
   scoringMain --> cfg
 
-  subgraph netstarEndpoints [w4.netstar.dev_endpoints]
+  subgraph netstarEndpoints [w4_netstar_dev_endpoints]
     cert[cert]
     dns[dns]
     hval[hval]
@@ -207,14 +207,14 @@ graph TB
   rdap --> logic
   firewall --> logic
 
-  subgraph categoryScores [CategoryScores_(0..100)]
-    conn[Connection_Security]
-    certHealth[Certificate_Health]
-    dnsHealth[DNS_Record_Health]
-    domainRep[Domain_Reputation]
-    whois[WHOIS_Pattern]
-    ipRep[IP_Reputation]
-    cred[Credential_Safety]
+  subgraph categoryScores [CategoryScores_0_to_100]
+    conn["Connection_Security"]
+    certHealth["Certificate_Health"]
+    dnsHealth["DNS_Record_Health"]
+    domainRep["Domain_Reputation"]
+    whois["WHOIS_Pattern"]
+    ipRep["IP_Reputation"]
+    cred["Credential_Safety"]
   end
 
   logic --> conn
@@ -243,27 +243,27 @@ graph TB
 graph TB
   dev[DeveloperMachine]
   repo[GitRepo]
-  gha[GitHubActions_CI]
-  remote[RemoteServer_(VM)]
+  gha["GitHubActions CI"]
+  remote["RemoteServer (VM)"]
 
   subgraph deployed [RemoteRuntime]
     node[NodeExpress_(Server/server.js)]
     python[Python3_Runtime]
-    score[ScoringEngine_(Scoring_Engine)]
+    score["ScoringEngine (Scoring Engine)"]
     node -->|"spawn"| score
-    score -->|"curl"| netstar[w4.netstar.dev]
+    score -->|"curl"| netstar["w4.netstar.dev"]
   end
 
   dev --> repo
   repo --> gha
-  dev -->|"deploy.sh_(ssh+tar)"| remote
+  dev -->|"deploy.sh (ssh + tar)"| remote
   remote --> node
   remote --> python
   remote --> score
 
   subgraph extensionDist [ExtensionDistribution]
-    unpacked[UnpackedExtension_(dev)]
-    webstoreZip[netstar-shield-webstore.zip_(build_artifact)]
+    unpacked["UnpackedExtension (dev)"]
+    webstoreZip["netstar-shield-webstore.zip (build artifact)"]
   end
 
   dev --> unpacked

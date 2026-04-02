@@ -8,9 +8,9 @@ This document describes the current architecture of the NetSTAR Shield browser e
 graph LR
   subgraph browserExtension [BrowserExtension_(MV3)]
     direction TB
-    popupUI[PopupUI_(React)]
+    popupUI["PopupUI (React)"]
     serviceWorker[BackgroundServiceWorker]
-    contentScript[ContentScript_(InPageOverlay)]
+    contentScript["ContentScript (InPageOverlay)"]
 
     popupUI <-->|"chrome.runtime.sendMessage"| serviceWorker
     contentScript <-->|"chrome.runtime.sendMessage"| serviceWorker
@@ -18,22 +18,22 @@ graph LR
 
   subgraph browserPlatform [BrowserPlatform]
     direction TB
-    tabsApi[Tabs_(tabs.onUpdated/onActivated)]
-    actionIcon[ActionIcon_(chrome.action)]
-    notificationsApi[Notifications_(optional_permission)]
-    storageLocal[chrome.storage.local_(cache,recentScans,soft_toggles)]
-    storageSync[chrome.storage.sync_(theme,textSize)]
+    tabsApi["Tabs (tabs.onUpdated/onActivated)"]
+    actionIcon["ActionIcon (chrome.action)"]
+    notificationsApi["Notifications (optional permission)"]
+    storageLocal["chrome.storage.local (cache,recentScans,soft_toggles)"]
+    storageSync["chrome.storage.sync (theme,textSize)"]
   end
 
   subgraph serverHost [ServerHost]
     direction TB
-    nodeServer[NodeExpressServer_(GET_/scan)]
-    pyEngine[PythonScoringEngine_(scoring_main.py)]
+    nodeServer["NodeExpressServer (GET /scan)"]
+    pyEngine["PythonScoringEngine (scoring_main.py)"]
   end
 
   subgraph externalServices [ExternalServices]
     direction TB
-    netstarApi[w4.netstar.dev_API]
+    netstarApi["w4.netstar.dev API"]
   end
 
   tabsApi --> serviceWorker
@@ -41,9 +41,9 @@ graph LR
   serviceWorker -->|"read/write"| storageLocal
   popupUI -->|"read/write_preferences"| storageSync
   serviceWorker -->|"may_notify"| notificationsApi
-  serviceWorker -->|"fetch_(HTTP)"| nodeServer
+  serviceWorker -->|"fetch (HTTP)"| nodeServer
   nodeServer -->|"spawn_subprocess"| pyEngine
-  pyEngine -->|"curl_(HTTPS)"| netstarApi
+  pyEngine -->|"curl (HTTPS)"| netstarApi
 ```
 
 ## Data Flow Architecture
@@ -53,14 +53,14 @@ sequenceDiagram
   participant User
   participant Browser
   participant ServiceWorker as BackgroundServiceWorker
-  participant StorageLocal as chrome.storage.local
+  participant StorageLocal as "chrome.storage.local"
   participant NodeServer as NodeExpressServer
   participant PyEngine as PythonScoringEngine
-  participant NetSTAR as w4.netstar.dev
-  participant ActionIcon as chrome.action
+  participant NetSTAR as "w4.netstar.dev"
+  participant ActionIcon as "chrome.action"
   participant Content as ContentScript
-  participant Notify as chrome.notifications
-  participant Popup as PopupUI_(React)
+  participant Notify as "chrome.notifications"
+  participant Popup as "PopupUI (React)"
 
   User->>Browser: Navigate_to_URL
   Browser->>ServiceWorker: tabs.onUpdated(status=complete)
@@ -74,7 +74,7 @@ sequenceDiagram
     PyEngine->>NetSTAR: curl_concurrent(cert,dns,hval,mail,rdap,firewall)
     NetSTAR-->>PyEngine: JSON_responses
     PyEngine-->>NodeServer: stdout(JSON_scores+aggregatedScore)
-    NodeServer-->>ServiceWorker: JSON({safetyScore,indicators,...})
+    NodeServer-->>ServiceWorker: "JSON {safetyScore, indicators, ...}"
     ServiceWorker->>StorageLocal: set(cacheKey,result)
   end
 
