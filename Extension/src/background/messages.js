@@ -2,6 +2,7 @@ import { getCachedOrScan } from "./scan.js";
 import { updateIcon } from "./icon.js";
 import { updateRecentScans } from "./recentScans.js";
 import { maybeShowRiskNotification } from "./notifications.js";
+import { SIGNALS_CACHE_PREFIX } from "./constants.js";
 
 /**
  * Messaging used by popup and other pages.
@@ -16,6 +17,21 @@ export function registerMessageListeners() {
         chrome.action.setBadgeText({ text: "" });
       }, 3000);
       sendResponse({ success: true });
+      return false;
+    }
+
+    if (request.action === "pageSignals") {
+      // Live DOM signals captured by content-inspect.js. Fire-and-forget cache.
+      const { signals, url } = request;
+      if (signals && url) {
+        try {
+          const domain = new URL(url.includes("://") ? url : `https://${url}`).hostname;
+          const cacheKey = `${SIGNALS_CACHE_PREFIX}${domain}`;
+          chrome.storage.local.set({ [cacheKey]: { signals, url, timestamp: Date.now() } });
+        } catch (e) {
+          console.error("Error caching page signals:", e);
+        }
+      }
       return false;
     }
 

@@ -53,6 +53,11 @@
       "matches": ["<all_urls>"],
       "js": ["src/content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content-inspect.js"],
+      "run_at": "document_idle"
     }
   ]
 }
