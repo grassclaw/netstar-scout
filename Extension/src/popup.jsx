@@ -184,7 +184,25 @@ function Popup() {
   const handleCloseTour = () => {
     setIsTourActive(false)
     setForceShowIndicators(undefined) // Reset indicator control
+    // Remember that the user has seen the tour so we don't auto-fire on every open.
+    if (chrome?.storage?.local) {
+      chrome.storage.local.set({ tourCompleted: true })
+    }
   }
+
+  /**
+   * Auto-fire the tour on first open after install.
+   * Checks chrome.storage.local for tourCompleted; if missing/false, opens the tour.
+   */
+  useEffect(() => {
+    if (!chrome?.storage?.local) return
+    chrome.storage.local.get({ tourCompleted: false }, ({ tourCompleted }) => {
+      if (!tourCompleted) {
+        setIsTourActive(true)
+        setActiveTab("home")
+      }
+    })
+  }, [])
 
   const handleTourStepChange = (stepData) => {
     // Auto-expand indicators when on the security indicators step
@@ -225,11 +243,22 @@ function Popup() {
         >
           <div className="px-4 py-3 flex items-center justify-between">
             <div>
-              <h1 className={`text-lg font-bold ${effectiveMode === "dark" ? "text-white" : "text-slate-900"}`}>
-                NetSTAR
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className={`text-lg font-bold ${effectiveMode === "dark" ? "text-white" : "text-slate-900"}`}>
+                  NetSTAR
+                </h1>
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                    effectiveMode === "dark"
+                      ? "bg-brand-500 text-white"
+                      : "bg-brand-600 text-white"
+                  }`}
+                >
+                  Scout
+                </span>
+              </div>
               <p className={`text-xs ${effectiveMode === "dark" ? "text-brand-300" : "text-brand-600"}`}>
-                Security Guide
+                Web Risk Intelligence
               </p>
             </div>
             <div className="flex items-center gap-1">
