@@ -1,7 +1,10 @@
 // Shared constants for the background service worker.
 
-// Scan API base — use "http://localhost:3000" for local dev, "http://69.164.202.138:3000" for live
-export const SCAN_API_BASE = "http://69.164.202.138:3000";
+// Scan API base. Currently UNUSED — scan.js runs in placeholder mode and does
+// not fetch. Value kept here for when we swap performSecurityScan() back to a
+// real fetch against threat-mcp (`https://scan.wildcatdashboard.com`) or a
+// local dev server (`http://localhost:3000`). Capstone Linode was 69.164.202.138:3000.
+export const SCAN_API_BASE = "http://localhost:3000";
 
 export const ICON_THRESHOLDS = {
   SAFE: 75,

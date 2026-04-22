@@ -223,6 +223,7 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
 
             if (response.securityData?.safetyScore !== undefined) {
               setSafetyScore(response.securityData.safetyScore);
+              setSecurityData(response.securityData);
             }
             setScanError(null);
             setScanState("success");
@@ -375,6 +376,15 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
           >
             Safety Score
           </div>
+          {securityData?.category && (
+            <div
+              className={`text-xs mt-1 ${
+                mode === "dark" ? "text-slate-400" : "text-brand-500"
+              }`}
+            >
+              Category: {securityData.category}
+            </div>
+          )}
           <div className="flex items-center justify-center gap-1 mt-3">
             {[...Array(5)].map((_, i) => {
               const segmentFill = Math.min(

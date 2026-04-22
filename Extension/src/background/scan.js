@@ -1,111 +1,49 @@
-import { CACHE_DURATION_MS, SCAN_API_BASE, SCAN_FETCH_TIMEOUT_MS } from "./constants.js";
+import { CACHE_DURATION_MS } from "./constants.js";
 import { normalizeScanDomain } from "./urlNormalize.js";
 
-/** In-flight scan promises by cache key so concurrent callers for the same domain share one request. */
-const inFlightByKey = new Map();
+// Placeholder scan layer. Returns a synthesized "safe" result for every URL
+// until threat-mcp lands (Launch Readiness §3.1–3.5). Keeps the existing
+// getCachedOrScan contract — chrome.storage.local caching still runs so the
+// UI behaves realistically. Swap performSecurityScan() for a real fetch when
+// the threat-mcp lite endpoint is ready; nothing downstream needs to change.
 
-/**
- * Cache and scan entry points
- */
 export async function getCachedOrScan(url) {
-  const t0 = Date.now();
   const domain = normalizeScanDomain(url);
   const cacheKey = `scan_${encodeURIComponent(domain || url)}`;
   const data = await chrome.storage.local.get(cacheKey);
-  console.log("[NetSTAR][timing] getCachedOrScan: after storage.get", Date.now() - t0, "ms");
-
   const now = Date.now();
+
   if (data[cacheKey]) {
     const cached = data[cacheKey];
     if (now - cached.timestamp < CACHE_DURATION_MS) {
-      console.log("[NetSTAR][timing] getCachedOrScan: cache HIT, returning", Date.now() - t0, "ms");
       return cached;
     } else {
       await chrome.storage.local.remove(cacheKey);
-      console.log("[NetSTAR][timing] getCachedOrScan: cache expired, removed", Date.now() - t0, "ms");
     }
-  } else {
-    console.log("[NetSTAR][timing] getCachedOrScan: cache MISS", Date.now() - t0, "ms");
   }
 
-  // Reuse in-flight request for the same domain so we don't double-scan (e.g. React Strict Mode / double mount).
-  if (inFlightByKey.has(cacheKey)) {
-    console.log("[NetSTAR][timing] getCachedOrScan: reusing in-flight request for", cacheKey);
-    return inFlightByKey.get(cacheKey);
-  }
-
-  const promise = (async () => {
-    try {
-      const beforeScan = Date.now();
-      const result = await performSecurityScan(url);
-      console.log("[NetSTAR][timing] getCachedOrScan: after performSecurityScan", Date.now() - beforeScan, "ms (total", Date.now() - t0, "ms)");
-
-      await chrome.storage.local.set({ [cacheKey]: result });
-      console.log("[NetSTAR][timing] getCachedOrScan: after storage.set, done", Date.now() - t0, "ms");
-      return result;
-    } finally {
-      inFlightByKey.delete(cacheKey);
-    }
-  })();
-  inFlightByKey.set(cacheKey, promise);
-  return promise;
+  const result = await performSecurityScan(url);
+  await chrome.storage.local.set({ [cacheKey]: result });
+  return result;
 }
 
-/**
- * Scanning functionality
- */
 export async function performSecurityScan(url) {
-  const domain = normalizeScanDomain(url);
+  const domain = normalizeScanDomain(url) || url;
 
-  // Prefer domain-based scans so the scoring engine doesn't get "www." subdomains for
-  // mail/rdap/dns checks (which can produce dramatically different scores).
-  const endpoint = domain
-    ? `${SCAN_API_BASE}/scan?domain=${encodeURIComponent(domain)}`
-    : `${SCAN_API_BASE}/scan?url=${encodeURIComponent(url)}`;
-  const startedAt = Date.now();
-  console.log("[NetSTAR][timing] performSecurityScan: fetch start", endpoint);
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), SCAN_FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(endpoint, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    const elapsedMs = Date.now() - startedAt;
-    console.log("[NetSTAR][timing] performSecurityScan: fetch done", elapsedMs, "ms");
-
-    console.log("[NetSTAR][scan] Response:", {
-      endpoint,
-      status: response.status,
-      ok: response.ok,
-      elapsedMs,
-    });
-
-    const data = await response.json();
-    console.log("[NetSTAR][scan] Payload summary:", {
-      safetyScore: data?.safetyScore,
-      aggregatedScore: data?.aggregatedScore,
-      indicatorsCount: Array.isArray(data?.indicators) ? data.indicators.length : 0,
-      timestamp: data?.timestamp,
-    });
-
-    const safetyScore = Number.isFinite(data?.safetyScore) ? data.safetyScore : data?.aggregatedScore;
-    const indicators = data?.indicators || [];
-
-    return {
-      safetyScore,
-      indicators,
-      timestamp: Date.now(),
-    };
-  } catch (error) {
-    clearTimeout(timeoutId);
-    const elapsedMs = Date.now() - startedAt;
-    if (error.name === "AbortError") {
-      console.error("[NetSTAR][scan] Timed out:", { endpoint, elapsedMs });
-      throw new Error(`Scan request timed out after ${SCAN_FETCH_TIMEOUT_MS}ms`);
-    }
-    console.error("[NetSTAR][scan] Failed:", { endpoint, elapsedMs, error });
-    throw error;
-  }
+  return {
+    safetyScore: 95,
+    category: "GenAI: Chat",
+    indicators: [
+      { id: "connection",  name: "Connection Security", score: 95, status: "excellent" },
+      { id: "cert",        name: "Certificate Health",  score: 95, status: "excellent" },
+      { id: "dns",         name: "DNS Record Health",   score: 95, status: "excellent" },
+      { id: "domain",      name: "Domain Reputation",   score: 95, status: "excellent" },
+      { id: "whois",       name: "WHOIS Pattern",       score: 95, status: "excellent" },
+      { id: "ip",          name: "IP Reputation",       score: 95, status: "excellent" },
+      { id: "credentials", name: "Credential Safety",   score: 95, status: "excellent" },
+    ],
+    domain,
+    placeholder: true,
+    timestamp: Date.now(),
+  };
 }
-
