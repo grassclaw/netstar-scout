@@ -256,6 +256,16 @@ function Popup() {
                 >
                   Scout
                 </span>
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                    effectiveMode === "dark"
+                      ? "bg-amber-500/80 text-slate-900"
+                      : "bg-amber-400 text-slate-900"
+                  }`}
+                  title="Threat scoring is in calibration"
+                >
+                  Beta
+                </span>
               </div>
               <p className={`text-xs ${effectiveMode === "dark" ? "text-brand-300" : "text-brand-600"}`}>
                 Web Risk Intelligence

@@ -17,10 +17,13 @@
 /.next/
 /out/
 
-# production
+# production / extension build artifacts
 /build
 /dist
+/.output
+/.wxt
 netstar-shield-webstore.zip
+*.zip
 
 # misc
 .DS_Store
