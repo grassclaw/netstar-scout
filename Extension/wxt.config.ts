@@ -49,16 +49,26 @@ export default defineConfig({
       },
     ],
 
-    // Firefox needs a browser_specific_settings.gecko.id for AMO signing.
-    // TODO(AMO submission, issue #9): add `data_collection_permissions` once
-    // the exact wxt schema is confirmed — Mozilla started requiring this field
-    // 2025-11-03 for new listings. Scout will declare websiteContent + URL
-    // collection (we send page URLs to the scoring backend).
+    // Firefox-specific manifest. AMO has required data_collection_permissions
+    // for new listings since 2025-11-03.
+    //
+    // Scout's data flow once threat-mcp wires in (post-launch):
+    //   - URL of visited tab     → sent to /api/v1/scan/lite  (browsingActivity)
+    //   - DOM signals from page  → sent in scan request body  (websiteContent)
+    //
+    // Currently in placeholder mode we transmit nothing, but AMO listings
+    // describe what the extension *can* do across versions, not what the
+    // current build does — so declare both upfront to avoid a re-review when
+    // the real backend lands.
     ...(browser === 'firefox' && {
       browser_specific_settings: {
         gecko: {
           id: 'scout@netstar.ai',
           strict_min_version: '121.0',
+          // wxt's manifest type doesn't yet know about this field; cast loose.
+          data_collection_permissions: {
+            required: ['websiteContent', 'browsingActivity'],
+          } as any,
         },
       },
     }),

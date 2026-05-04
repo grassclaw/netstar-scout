@@ -40,7 +40,9 @@ export async function maybeShowRiskNotification(url, safetyScore) {
   if (!(await canNotifyNow())) return;
   if (!(chrome && chrome.notifications)) return;
 
-  const iconUrl = chrome.runtime.getURL("src/icons/icon-danger-128.png");
+  // wxt copies src/public/icons/* to the extension root, so the runtime URL
+  // is `icons/...` (not `src/icons/...` like the pre-wxt build).
+  const iconUrl = chrome.runtime.getURL("icons/icon-danger-128.png");
   chrome.notifications.create(
     `risky-site-${Date.now()}`,
     {
