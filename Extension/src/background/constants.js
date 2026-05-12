@@ -1,10 +1,13 @@
 // Shared constants for the background service worker.
 
-// Scan API base. Currently UNUSED — scan.js runs in placeholder mode and does
-// not fetch. Value kept here for when we swap performSecurityScan() back to a
-// real fetch against threat-mcp (`https://scan.wildcatdashboard.com`) or a
-// local dev server (`http://localhost:3000`). Capstone Linode was 69.164.202.138:3000.
-export const SCAN_API_BASE = "http://localhost:3000";
+// Threat-MCP API base. Used by scan.js to call /api/v1/scout/categorize for
+// category resolution (Polaris lookup → Ethos fallback). Auth: CF Access
+// service token (CF-Access-Client-Id + CF-Access-Client-Secret) stored in
+// chrome.storage.sync — see background/auth.js. If no token is configured,
+// the request still runs but CF Access returns 403 and Scout falls back to
+// the client-side metadata categorization. Override per-build via
+// chrome.storage.sync.set({scanApiBase: "..."}) — useful for staging hosts.
+export const SCAN_API_BASE = "https://scan.netstarlabs.com";
 
 export const ICON_THRESHOLDS = {
   SAFE: 75,

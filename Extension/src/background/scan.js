@@ -1,19 +1,19 @@
 import {
   CACHE_DURATION_MS,
   SIGNALS_CACHE_PREFIX,
-  SCAN_API_BASE,
-  SCAN_FETCH_TIMEOUT_MS,
 } from "./constants.js";
 import { normalizeScanDomain } from "./urlNormalize.js";
-import { scoreFromContext, mergeBackendEnrichment } from "../lib/clientScoring.js";
+import { scoreFromContext } from "../lib/clientScoring.js";
+import { categorize } from "./categorize.js";
 
 /**
  * Cached-or-scan entry point. Returns a SecurityData object shaped for the
  * popup UI. The result is always computed client-side first from the cached
- * page signals (content-inspect.js) + page metadata. If a backend enrichment
- * endpoint is reachable, we kick it off asynchronously and write the merged
- * result back to cache for the next popup open — the current open returns
- * immediately with the client-side result.
+ * page signals (content-inspect.js) + page metadata so the popup never blocks
+ * on backend latency. In parallel we kick off backend categorization
+ * (threat-mcp /api/v1/scout/categorize → Polaris lookup, Ethos fallback) and
+ * merge the result into cache for the next popup open. When the user reopens
+ * the popup, the merged result is what they see.
  */
 export async function getCachedOrScan(url, ctx = {}) {
   const domain = normalizeScanDomain(url);
@@ -29,12 +29,17 @@ export async function getCachedOrScan(url, ctx = {}) {
     await chrome.storage.local.remove(cacheKey);
   }
 
-  const result = await performSecurityScan(url, ctx);
+  const pageCtx = await readCachedPageContext(domain);
+  const result = scoreFromContext(url, pageCtx.signals, pageCtx.meta, {
+    content: pageCtx.content,
+    redirectSummary: ctx.redirectSummary || null,
+  });
   await chrome.storage.local.set({ [cacheKey]: result });
 
-  // Fire-and-forget backend enrichment. If the lite endpoint is reachable,
-  // merge and rewrite cache so the next popup open sees the richer result.
-  void enrichInBackground(url, domain, cacheKey, result);
+  // Backend categorization runs in parallel — does not block this return.
+  // When the response lands we merge into cache; the next popup open picks
+  // up the upgraded category + source badge.
+  void categorizeInBackground(url, pageCtx, cacheKey, result);
 
   return result;
 }
@@ -71,33 +76,25 @@ async function readCachedPageContext(domain) {
 }
 
 /**
- * Attempt threat-mcp /scan/lite enrichment. Currently inert — the endpoint
- * does not exist yet (Launch Readiness §3.2). When it lands, this will start
- * augmenting cert/dns/ip/whois indicators automatically.
+ * Async backend categorization. On success, merges {category, categoryId,
+ * categorySource, confidence, tier} into the cached scan result and writes
+ * back so the next popup open displays it. Failure modes (no token, network
+ * error, CF Access 403) leave the client-side result untouched — silent.
  */
-async function enrichInBackground(url, domain, cacheKey, clientResult) {
-  if (!SCAN_API_BASE) return;
-  // Only attempt enrichment when we have a real-looking domain.
-  if (!domain || !/\.[a-z]{2,}/i.test(domain)) return;
+async function categorizeInBackground(url, pageCtx, cacheKey, clientResult) {
+  // Require real-looking domain. IPs / extension URLs skipped.
+  if (!url || !/\.[a-z]{2,}/i.test(url)) return;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SCAN_FETCH_TIMEOUT_MS);
-  try {
-    const resp = await fetch(`${SCAN_API_BASE}/api/v1/scan/lite`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, client_source: "scout" }),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (!resp.ok) return;
-    const backend = await resp.json();
-    const merged = mergeBackendEnrichment(clientResult, backend);
-    await chrome.storage.local.set({ [cacheKey]: merged });
-  } catch {
-    // Backend unreachable or aborted — client result stands. Silent by design;
-    // we don't want demo logs spammed when /scan/lite is offline.
-  } finally {
-    clearTimeout(timer);
-  }
+  const cat = await categorize(url, pageCtx.content, pageCtx.meta);
+  if (!cat) return;
+
+  const merged = {
+    ...clientResult,
+    category: cat.category,
+    categoryId: cat.categoryId,
+    categorySource: cat.source,
+    categoryConfidence: cat.confidence,
+    categoryTier: cat.tier,
+  };
+  await chrome.storage.local.set({ [cacheKey]: merged });
 }

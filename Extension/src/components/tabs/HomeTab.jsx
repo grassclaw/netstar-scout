@@ -64,6 +64,24 @@ const INDICATORS_OPEN_KEY = "indicatorsOpen";
  * />
  * ```
  */
+function categorySourceLabel(src) {
+  switch (src) {
+    case "polaris": return "via Polaris";
+    case "ethos":   return "via Ethos";
+    case "fallback":return "from page";
+    default:        return "";
+  }
+}
+
+function categorySourceTooltip(src) {
+  switch (src) {
+    case "polaris": return "Category resolved from NetSTAR's Polaris classification table";
+    case "ethos":   return "Category predicted live by Ethos (NetSTAR ML model)";
+    case "fallback":return "Category derived from page metadata — backend unavailable";
+    default:        return "";
+  }
+}
+
 function hostnameFromUrl(urlString) {
   try {
     const u = new URL(urlString.includes("://") ? urlString : `https://${urlString}`);
@@ -422,6 +440,16 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
               }`}
             >
               Category: {securityData.category}
+              {securityData.categorySource && (
+                <span
+                  className={`ml-1 text-[10px] uppercase tracking-wide ${
+                    mode === "dark" ? "text-brand-400" : "text-brand-600"
+                  }`}
+                  title={categorySourceTooltip(securityData.categorySource)}
+                >
+                  · {categorySourceLabel(securityData.categorySource)}
+                </span>
+              )}
             </div>
           )}
           <div className="flex items-center justify-center gap-1 mt-3">

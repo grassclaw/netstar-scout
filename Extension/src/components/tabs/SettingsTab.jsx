@@ -556,12 +556,215 @@ export function SettingsTab({
           </div>
         </div>
 
+        {/* NetSTAR Connection (CF Access service token). Optional. When set,
+            Scout calls scan.netstarlabs.com for live category resolution
+            (Polaris → Ethos). When unset, Scout uses on-page metadata only
+            and the connection block stays collapsed. */}
+        <ConnectionRow mode={mode} />
+
         {/* Privacy */}
         {/* <div className={`border rounded-2xl p-5 ${mode === "dark" ? "border-slate-700 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}>
           <h3 className={`font-medium mb-2 ${mode === "dark" ? "text-white" : "text-slate-900"}`}>Privacy</h3>
           <p className={`text-sm ${mode === "dark" ? "text-slate-300" : "text-slate-600"}`}>Control your privacy and data settings</p>
         </div> */}
       </div>
+    </div>
+  );
+}
+
+const DEFAULT_API_BASE = "https://scan.netstarlabs.com";
+
+function ConnectionRow({ mode }) {
+  const [open, setOpen] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
+  const [status, setStatus] = useState("idle"); // idle | saving | saved | error
+  const [hasToken, setHasToken] = useState(false);
+
+  useEffect(() => {
+    if (!chrome?.storage?.sync) return;
+    chrome.storage.sync.get(
+      ["cfAccessClientId", "cfAccessClientSecret", "scanApiBase"],
+      ({ cfAccessClientId, cfAccessClientSecret, scanApiBase }) => {
+        if (cfAccessClientId) setClientId(cfAccessClientId);
+        if (cfAccessClientSecret) setClientSecret(cfAccessClientSecret);
+        if (scanApiBase) setApiBase(scanApiBase);
+        setHasToken(!!(cfAccessClientId && cfAccessClientSecret));
+      }
+    );
+  }, []);
+
+  const handleSave = async () => {
+    setStatus("saving");
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.storage.sync.set(
+          {
+            cfAccessClientId: clientId.trim(),
+            cfAccessClientSecret: clientSecret.trim(),
+            scanApiBase: apiBase.trim() || DEFAULT_API_BASE,
+          },
+          () => {
+            if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+            else resolve();
+          }
+        );
+      });
+      setHasToken(!!(clientId && clientSecret));
+      setStatus("saved");
+      setTimeout(() => setStatus("idle"), 1500);
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  const handleClear = async () => {
+    setClientId("");
+    setClientSecret("");
+    await new Promise((resolve) =>
+      chrome.storage.sync.remove(
+        ["cfAccessClientId", "cfAccessClientSecret"],
+        resolve
+      )
+    );
+    setHasToken(false);
+    setStatus("idle");
+  };
+
+  return (
+    <div
+      className={`border rounded-2xl p-5 ${
+        mode === "dark"
+          ? "border-slate-700 bg-slate-800/30"
+          : "border-slate-200 bg-slate-50"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between"
+      >
+        <div className="text-left">
+          <h3
+            className={`font-medium ${
+              mode === "dark" ? "text-white" : "text-slate-900"
+            }`}
+          >
+            NetSTAR Connection
+          </h3>
+          <p
+            className={`text-xs mt-1 ${
+              mode === "dark" ? "text-slate-400" : "text-slate-500"
+            }`}
+          >
+            {hasToken
+              ? `Connected · ${apiBase.replace(/^https?:\/\//, "")}`
+              : "Not connected — using on-page categorization only"}
+          </p>
+        </div>
+        <span
+          className={`text-xs ${
+            mode === "dark" ? "text-slate-300" : "text-slate-600"
+          }`}
+        >
+          {open ? "▼" : "▶"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-3">
+          <p
+            className={`text-xs ${
+              mode === "dark" ? "text-slate-400" : "text-slate-500"
+            }`}
+          >
+            Paste a Cloudflare Access service token to call NetSTAR's
+            categorization backend. Without a token Scout still works — it
+            categorizes pages from on-page metadata only.
+          </p>
+          <div>
+            <label
+              className={`text-xs font-medium block mb-1 ${
+                mode === "dark" ? "text-slate-300" : "text-slate-700"
+              }`}
+            >
+              CF-Access-Client-Id
+            </label>
+            <input
+              type="text"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="<uuid>.access"
+              className={`w-full text-xs rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500 ${
+                mode === "dark"
+                  ? "border-slate-600 bg-slate-800 text-white"
+                  : "border-slate-300 bg-white text-slate-900"
+              }`}
+            />
+          </div>
+          <div>
+            <label
+              className={`text-xs font-medium block mb-1 ${
+                mode === "dark" ? "text-slate-300" : "text-slate-700"
+              }`}
+            >
+              CF-Access-Client-Secret
+            </label>
+            <input
+              type="password"
+              value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+              placeholder="••••••••"
+              className={`w-full text-xs rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500 ${
+                mode === "dark"
+                  ? "border-slate-600 bg-slate-800 text-white"
+                  : "border-slate-300 bg-white text-slate-900"
+              }`}
+            />
+          </div>
+          <div>
+            <label
+              className={`text-xs font-medium block mb-1 ${
+                mode === "dark" ? "text-slate-300" : "text-slate-700"
+              }`}
+            >
+              API Base (advanced)
+            </label>
+            <input
+              type="text"
+              value={apiBase}
+              onChange={(e) => setApiBase(e.target.value)}
+              placeholder={DEFAULT_API_BASE}
+              className={`w-full text-xs rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500 ${
+                mode === "dark"
+                  ? "border-slate-600 bg-slate-800 text-white"
+                  : "border-slate-300 bg-white text-slate-900"
+              }`}
+            />
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={status === "saving"}
+              className="bg-gradient-to-r from-brand-500 to-brand-600 text-white hover:from-brand-600 hover:to-brand-700"
+            >
+              {status === "saving" ? "Saving…" : status === "saved" ? "Saved ✓" : "Save"}
+            </Button>
+            {hasToken && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleClear}
+                className={mode === "dark" ? "text-slate-300" : "text-slate-600"}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
