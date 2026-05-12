@@ -4,9 +4,11 @@
 import { registerInstallListener } from "../background/install.js";
 import { registerTabListeners } from "../background/tabs.js";
 import { registerMessageListeners } from "../background/messages.js";
+import { registerRedirectTracker } from "../background/redirects.js";
 
 export default defineBackground(() => {
   registerInstallListener();
   registerTabListeners();
   registerMessageListeners();
+  registerRedirectTracker();
 });

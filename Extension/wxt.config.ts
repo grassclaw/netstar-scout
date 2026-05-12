@@ -9,6 +9,7 @@ export default defineConfig({
   srcDir: 'src',
   entrypointsDir: 'entrypoints',
   outDir: '.output',
+  publicDir: 'src/public',
 
   manifest: ({ browser }) => ({
     name: 'NetSTAR Scout',
@@ -16,7 +17,7 @@ export default defineConfig({
       'Real-time web risk intelligence from NetSTAR — see how safe a site is before you click.',
     version: '1.0.4',
 
-    permissions: ['activeTab', 'storage', 'tabs', 'scripting'],
+    permissions: ['activeTab', 'storage', 'tabs', 'scripting', 'webNavigation', 'webRequest'],
     host_permissions: ['<all_urls>'],
     optional_permissions: ['notifications'],
 

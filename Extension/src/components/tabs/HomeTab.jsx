@@ -303,6 +303,23 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
     ? (securityData.message || "We couldn't scan this site.")
     : "Scanned";
 
+  // Live affordance — visible only when we actually consumed page signals,
+  // so the user can tell scoring used THIS page, not a generic lookup.
+  const summary = securityData?.signalsSummary;
+  const redirect = securityData?.redirectSummary;
+  const liveAffordance = summary
+    ? [
+        `${summary.forms} form${summary.forms === 1 ? "" : "s"}`,
+        `${summary.inlineScripts} script${summary.inlineScripts === 1 ? "" : "s"}`,
+        `${summary.crossOriginHosts} 3rd-party host${summary.crossOriginHosts === 1 ? "" : "s"}`,
+      ].join(" · ")
+    : null;
+  const redirectAffordance = redirect && redirect.hopCount > 0
+    ? `${redirect.hopCount} redirect hop${redirect.hopCount === 1 ? "" : "s"}${
+        redirect.crossOrigin > 0 ? `, ${redirect.crossOrigin} cross-origin` : ""
+      }${redirect.protocolDowngrade ? " · ⚠ HTTPS→HTTP" : ""}`
+    : null;
+
 
   return (
     <div className="p-6">
@@ -322,6 +339,28 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
         >
           {headerLine} <span className="break-all">{currentUrl}</span>
         </p>
+        {liveAffordance && (
+          <p
+            className={`text-[11px] mt-0.5 ${
+              mode === "dark" ? "text-slate-400" : "text-brand-500"
+            }`}
+            title="Computed live from this page"
+          >
+            Live: {liveAffordance}
+          </p>
+        )}
+        {redirectAffordance && (
+          <p
+            className={`text-[11px] ${
+              redirect?.protocolDowngrade
+                ? "text-red-500"
+                : mode === "dark" ? "text-slate-400" : "text-brand-500"
+            }`}
+            title="Redirect chain observed by Scout in this tab"
+          >
+            Path: {redirectAffordance}
+          </p>
+        )}
       </div>
 
       {/* Friendly Score Display */}

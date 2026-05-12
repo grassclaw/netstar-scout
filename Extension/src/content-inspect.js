@@ -41,6 +41,13 @@
       mismatched_links: 0,
       external_links: 0,
       data_uri_links: 0,
+      cookie_count: 0,
+      cookie_bytes: 0,
+      localstorage_keys: 0,
+      sessionstorage_keys: 0,
+      perf_failed_requests: 0,
+      perf_slow_requests: 0,
+      perf_cross_origin_hosts: 0,
       mode: "live",
     };
 
@@ -255,7 +262,129 @@
       // Silently ignore
     }
 
+    // --- Cookie / storage shape ---
+    try {
+      const shape = extractStorageShape();
+      signals.cookie_count = shape.cookieCount;
+      signals.cookie_bytes = shape.cookieBytes;
+      signals.localstorage_keys = shape.localStorageKeys;
+      signals.sessionstorage_keys = shape.sessionStorageKeys;
+    } catch (e) {
+      // localStorage access can throw on sandboxed iframes / blocked origins
+    }
+
+    // --- Performance anomalies ---
+    try {
+      const perf = extractPerfAnomalies();
+      signals.perf_failed_requests = perf.failedRequests;
+      signals.perf_slow_requests = perf.slowRequests;
+      signals.perf_cross_origin_hosts = perf.crossOriginHosts;
+    } catch (e) {
+      // performance.getEntriesByType isn't available in all contexts
+    }
+
     return signals;
+  }
+
+  /**
+   * Returns counts only — no values, no keys. We do not exfiltrate user data.
+   */
+  function extractStorageShape() {
+    let cookieCount = 0;
+    let cookieBytes = 0;
+    try {
+      const raw = document.cookie || "";
+      cookieBytes = raw.length;
+      if (raw) cookieCount = raw.split(/;\s*/).filter(Boolean).length;
+    } catch (e) {
+      // ignore
+    }
+    let localStorageKeys = 0;
+    let sessionStorageKeys = 0;
+    try {
+      localStorageKeys = window.localStorage ? window.localStorage.length : 0;
+    } catch (e) {
+      // SecurityError on cross-origin / sandboxed
+    }
+    try {
+      sessionStorageKeys = window.sessionStorage ? window.sessionStorage.length : 0;
+    } catch (e) {
+      // ignore
+    }
+    return { cookieCount, cookieBytes, localStorageKeys, sessionStorageKeys };
+  }
+
+  /**
+   * Summarize fetch/resource activity via the Performance API. Lightweight —
+   * the browser already collected this data; we just count it.
+   */
+  function extractPerfAnomalies() {
+    let failedRequests = 0;
+    let slowRequests = 0;
+    const hosts = new Set();
+    try {
+      const pageHost = location.hostname.replace(/^www\./, "");
+      const entries = performance.getEntriesByType("resource") || [];
+      for (const e of entries) {
+        // Failure heuristic: completed entry but transferSize=0 and
+        // duration=0 for a cross-origin URL == likely network failure / blocked.
+        // (Won't catch CORS-blocked responses cleanly, but flags many failures.)
+        if (
+          e.transferSize === 0 &&
+          e.duration === 0 &&
+          !e.name.startsWith("data:") &&
+          !e.name.startsWith("blob:")
+        ) {
+          failedRequests++;
+        }
+        if (e.duration > 5000) slowRequests++;
+        try {
+          const u = new URL(e.name);
+          const h = u.hostname.replace(/^www\./, "");
+          if (h && h !== pageHost) hosts.add(h);
+        } catch {
+          // skip non-URL entries (e.g., blob:)
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return {
+      failedRequests,
+      slowRequests,
+      crossOriginHosts: hosts.size,
+    };
+  }
+
+  /**
+   * Capture body text up to a byte cap + heading list. This is what the
+   * backend categorizer (Polaris miss path) will consume. innerText not
+   * textContent so we get visible text only, no hidden CSS-display:none stuff.
+   */
+  function extractPageContent() {
+    const cap = 8 * 1024;
+    let text = "";
+    try {
+      const body = document.body;
+      if (body) {
+        // innerText is slow on huge pages — slice via the underlying string.
+        const raw = (body.innerText || "").replace(/\s+/g, " ").trim();
+        text = raw.length > cap ? raw.slice(0, cap) : raw;
+      }
+    } catch (e) {
+      // ignore
+    }
+    const headings = [];
+    try {
+      const nodes = document.querySelectorAll("h1, h2, h3");
+      for (let i = 0; i < nodes.length && headings.length < 20; i++) {
+        const t = (nodes[i].textContent || "").trim();
+        if (t && t.length <= 200) headings.push(t);
+      }
+    } catch (e) {
+      // ignore
+    }
+    return { text, headings };
   }
 
   /**
@@ -305,12 +434,81 @@
     return false;
   }
 
+  /**
+   * Extract structural page metadata for client-side categorization.
+   * Reads og:* + twitter:* meta tags and any JSON-LD @type values. We do not
+   * read body keywords — only structured metadata authors declared.
+   */
+  function extractPageMeta() {
+    const meta = {
+      title: (document.title || "").slice(0, 200),
+      lang: document.documentElement.getAttribute("lang") || "",
+      ogType: "",
+      ogSiteName: "",
+      twitterCard: "",
+      description: "",
+      schemaTypes: [],
+    };
+
+    try {
+      const og = document.querySelector('meta[property="og:type"]');
+      if (og) meta.ogType = (og.getAttribute("content") || "").trim();
+      const ogSite = document.querySelector('meta[property="og:site_name"]');
+      if (ogSite) meta.ogSiteName = (ogSite.getAttribute("content") || "").trim().slice(0, 100);
+      const tw = document.querySelector('meta[name="twitter:card"]');
+      if (tw) meta.twitterCard = (tw.getAttribute("content") || "").trim();
+      const desc = document.querySelector('meta[name="description"]');
+      if (desc) meta.description = (desc.getAttribute("content") || "").trim().slice(0, 300);
+    } catch (e) {
+      // ignore
+    }
+
+    try {
+      const lds = document.querySelectorAll('script[type="application/ld+json"]');
+      const types = new Set();
+      lds.forEach((node, idx) => {
+        if (idx > 8) return; // cap parsing cost
+        const txt = node.textContent || "";
+        if (!txt || txt.length > 100_000) return;
+        let parsed;
+        try {
+          parsed = JSON.parse(txt);
+        } catch {
+          return;
+        }
+        collectTypes(parsed, types);
+      });
+      meta.schemaTypes = Array.from(types).slice(0, 12);
+    } catch (e) {
+      // ignore
+    }
+
+    return meta;
+  }
+
+  function collectTypes(node, out, depth = 0) {
+    if (!node || depth > 4) return;
+    if (Array.isArray(node)) {
+      node.forEach((n) => collectTypes(n, out, depth + 1));
+      return;
+    }
+    if (typeof node !== "object") return;
+    const t = node["@type"];
+    if (typeof t === "string") out.add(t);
+    else if (Array.isArray(t)) t.forEach((x) => typeof x === "string" && out.add(x));
+    if (node["@graph"]) collectTypes(node["@graph"], out, depth + 1);
+  }
+
   // --- Run extraction and send to background ---
   try {
     const signals = extractPageSignals();
+    const meta = extractPageMeta();
+    const content = extractPageContent();
     chrome.runtime.sendMessage({
       action: "pageSignals",
       signals: signals,
+      meta: meta,
+      content: content,
       url: location.href,
     });
   } catch (e) {

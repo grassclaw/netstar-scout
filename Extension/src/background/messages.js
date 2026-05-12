@@ -3,6 +3,47 @@ import { updateIcon } from "./icon.js";
 import { updateRecentScans } from "./recentScans.js";
 import { maybeShowRiskNotification } from "./notifications.js";
 import { SIGNALS_CACHE_PREFIX } from "./constants.js";
+import { normalizeScanDomain } from "./urlNormalize.js";
+import { getRedirectSummary } from "./redirects.js";
+
+/**
+ * Ensure live page signals are cached for the given tab before scoring.
+ * Content scripts only auto-fire at `document_idle` on fresh page loads, so a
+ * popup opened on a pre-existing tab would otherwise hit the URL-only fallback
+ * path. This injects content-inspect.js on demand and waits briefly for the
+ * pageSignals message to populate the cache. Idempotent: re-injection on a
+ * page that already ran the script just produces another cache write.
+ */
+async function ensurePageSignals(tabId, url) {
+  try {
+    if (!chrome?.scripting?.executeScript || !tabId) return;
+    const domain = normalizeScanDomain(url);
+    if (!domain) return;
+
+    const cacheKey = `${SIGNALS_CACHE_PREFIX}${domain}`;
+    const existing = await chrome.storage.local.get(cacheKey);
+    const cached = existing[cacheKey];
+    // Skip injection if we already have fresh-enough signals (< 30s old).
+    if (cached && Date.now() - (cached.timestamp || 0) < 30_000) return;
+
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content-scripts/content-inspect.js"],
+    });
+
+    // Poll briefly for the pageSignals message to land in cache.
+    const deadline = Date.now() + 600;
+    while (Date.now() < deadline) {
+      const fresh = await chrome.storage.local.get(cacheKey);
+      const c = fresh[cacheKey];
+      if (c && c.timestamp && c.timestamp > (cached?.timestamp || 0)) return;
+      await new Promise((r) => setTimeout(r, 60));
+    }
+  } catch (e) {
+    // Injection can fail on chrome:// pages, webstore, pdf viewer, etc.
+    // The scorer will fall back to URL-only — no need to surface this.
+  }
+}
 
 /**
  * Messaging used by popup and other pages.
@@ -21,13 +62,23 @@ export function registerMessageListeners() {
     }
 
     if (request.action === "pageSignals") {
-      // Live DOM signals captured by content-inspect.js. Fire-and-forget cache.
-      const { signals, url } = request;
-      if (signals && url) {
+      // Live DOM signals + metadata captured by content-inspect.js.
+      // Fire-and-forget cache keyed on the same normalized domain that
+      // scan.js will look up by, so the two layers line up.
+      const { signals, meta, content, url } = request;
+      if ((signals || meta || content) && url) {
         try {
-          const domain = new URL(url.includes("://") ? url : `https://${url}`).hostname;
-          const cacheKey = `${SIGNALS_CACHE_PREFIX}${domain}`;
-          chrome.storage.local.set({ [cacheKey]: { signals, url, timestamp: Date.now() } });
+          const domain = normalizeScanDomain(url);
+          if (domain) {
+            const cacheKey = `${SIGNALS_CACHE_PREFIX}${domain}`;
+            chrome.storage.local.set({
+              [cacheKey]: { signals, meta, content, url, timestamp: Date.now() },
+            });
+            // Invalidate the prior scan result so the next popup open
+            // picks up signals captured after the last scan.
+            const scanKey = `scan_${encodeURIComponent(domain)}`;
+            chrome.storage.local.remove(scanKey);
+          }
         } catch (e) {
           console.error("Error caching page signals:", e);
         }
@@ -114,11 +165,18 @@ export function registerMessageListeners() {
             if (!/^https?:\/\//i.test(url)) {
               response = { url, title: targetTab.title, securityData: null };
             } else {
-              const result = await getCachedOrScan(url);
+              // On-demand injection: if this tab was opened before the
+              // extension was installed/reloaded, its content script never
+              // ran. Inject now so the popup can score from real page signals
+              // rather than falling back to URL-only.
+              await ensurePageSignals(targetTab.id, url);
+              const redirectSummary = getRedirectSummary(targetTab.id);
+              const result = await getCachedOrScan(url, { redirectSummary });
               response = {
                 url,
                 title: targetTab.title,
                 securityData: result || null,
+                redirectSummary,
               };
             }
           } else {
