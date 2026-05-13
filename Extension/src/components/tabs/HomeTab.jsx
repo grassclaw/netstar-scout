@@ -70,6 +70,7 @@ function categorySourceLabel(src) {
     case "polaris": return "via Polaris";
     case "ethos":   return "via Ethos";
     case "llm":     return "via AI Engine";
+    case "pending": return "resolving…";
     case "fallback":return "from page";
     default:        return "";
   }
@@ -80,6 +81,7 @@ function categorySourceTooltip(src) {
     case "polaris": return "Category resolved from NetSTAR's Polaris classification table";
     case "ethos":   return "Category predicted by Ethos (NetSTAR ML model)";
     case "llm":     return "Category determined live by NetSTAR's AI Engine on this page's content";
+    case "pending": return "NetSTAR is categorizing this page — usually takes a few seconds";
     case "fallback":return "Category derived from page metadata — backend unavailable";
     default:        return "";
   }
@@ -154,6 +156,28 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
    * Runs once on component mount to populate initial security information
    * @memberof module:Front End~HomeTab
    */
+  // Listen for backend category resolution. Background fires
+  // "categoryResolved" once the Polaris/Ethos/LLM call finishes (could be
+  // ~18s after popup open for LLM cold). Update the category in place so
+  // the threat score doesn't have to re-render.
+  useEffect(() => {
+    if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return;
+    const listener = (msg) => {
+      if (msg?.action === "categoryResolved" && msg.securityData) {
+        setSecurityData((prev) => {
+          // Only swap if this resolution is for the URL we're currently showing
+          if (!prev || prev.error) return prev;
+          if (prev.domain && msg.securityData.domain && prev.domain !== msg.securityData.domain) {
+            return prev;
+          }
+          return { ...prev, ...msg.securityData };
+        });
+      }
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    return () => chrome.runtime.onMessage.removeListener(listener);
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 

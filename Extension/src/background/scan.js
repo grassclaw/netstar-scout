@@ -40,31 +40,58 @@ export async function getCachedOrScan(url, ctx = {}) {
   // reasonably from a title alone.
   const metaForBackend = pageCtx.meta || (ctx.tabTitle ? { title: ctx.tabTitle } : null);
 
-  // Wait for backend categorization so the FIRST popup open shows the real
-  // Polaris/Ethos/LLM category, not the client-side metadata fallback.
+  // Mark category as "in flight" so the popup shows a placeholder. The
+  // threat score doesn't wait — it's computed locally and returned now.
+  const initialResult = {
+    ...clientResult,
+    category: "Resolving…",
+    categorySource: "pending",
+  };
+  await chrome.storage.local.set({ [cacheKey]: initialResult });
+
+  // Backend categorization runs in the background. When it completes, the
+  // merged result is written to cache + a runtime message is broadcast so
+  // the popup can swap the category in place without a full re-fetch.
+  // Latencies:
   //   Polaris hit  → <100ms
   //   Ethos        → ~500ms warm, ~1.5s cold
   //   LLM (gpt-5-mini, 2-stage pipeline) → 8-18s
-  // Budget 20s so the LLM path completes on first open. The cache TTL is
-  // 24h after this, so the slow first-open is paid once per URL per day.
-  const backendCat = await Promise.race([
-    categorize(url, pageCtx.content, metaForBackend),
-    new Promise((resolve) => setTimeout(() => resolve(null), 20_000)),
-  ]);
+  void resolveCategoryAsync(url, pageCtx.content, metaForBackend, cacheKey, clientResult);
 
-  const merged = backendCat
-    ? {
-        ...clientResult,
-        category: backendCat.category,
-        categoryId: backendCat.categoryId,
-        categorySource: backendCat.source,
-        categoryConfidence: backendCat.confidence,
-        categoryTier: backendCat.tier,
-      }
-    : clientResult;
+  return initialResult;
+}
 
-  await chrome.storage.local.set({ [cacheKey]: merged });
-  return merged;
+async function resolveCategoryAsync(url, content, meta, cacheKey, clientResult) {
+  try {
+    const cat = await categorize(url, content, meta);
+    const merged = cat
+      ? {
+          ...clientResult,
+          category: cat.category,
+          categoryId: cat.categoryId,
+          categorySource: cat.source,
+          categoryConfidence: cat.confidence,
+          categoryTier: cat.tier,
+        }
+      : clientResult; // backend failed/empty → keep client-side category
+
+    await chrome.storage.local.set({ [cacheKey]: merged });
+
+    // Notify any open popup that the category has resolved. Popup listens
+    // via chrome.runtime.onMessage and updates state in place.
+    try {
+      chrome.runtime.sendMessage({
+        action: "categoryResolved",
+        url,
+        securityData: merged,
+      });
+    } catch {
+      // No popup listening — that's fine, cache is the source of truth.
+    }
+  } catch (e) {
+    // Defensive: never let async resolution throw unhandled.
+    console.error("[NetSTAR] resolveCategoryAsync failed:", e);
+  }
 }
 
 export async function performSecurityScan(url, ctx = {}) {
