@@ -48,7 +48,7 @@ export async function getAuthConfig() {
  * @param {number} timeoutMs
  * @returns {Promise<Response>}
  */
-export async function authedFetch(path, init = {}, timeoutMs = 12_000) {
+export async function authedFetch(path, init = {}, timeoutMs = 25_000) {
   const { clientId, clientSecret, apiBase } = await getAuthConfig();
 
   const headers = new Headers(init.headers || {});

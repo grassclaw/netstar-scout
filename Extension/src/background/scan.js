@@ -41,14 +41,15 @@ export async function getCachedOrScan(url, ctx = {}) {
   const metaForBackend = pageCtx.meta || (ctx.tabTitle ? { title: ctx.tabTitle } : null);
 
   // Wait for backend categorization so the FIRST popup open shows the real
-  // Polaris/Ethos category, not the client-side metadata fallback. Polaris
-  // hits in <100ms; Ethos averages ~500ms warm, ~1.5s cold. Budget 4s — the
-  // popup is already waiting for ensurePageSignals (600ms) before this, so
-  // total worst-case popup latency is ~4.6s. If it times out, return client
-  // result and let next open pick up the merge.
+  // Polaris/Ethos/LLM category, not the client-side metadata fallback.
+  //   Polaris hit  → <100ms
+  //   Ethos        → ~500ms warm, ~1.5s cold
+  //   LLM (gpt-5-mini, 2-stage pipeline) → 8-18s
+  // Budget 20s so the LLM path completes on first open. The cache TTL is
+  // 24h after this, so the slow first-open is paid once per URL per day.
   const backendCat = await Promise.race([
     categorize(url, pageCtx.content, metaForBackend),
-    new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
+    new Promise((resolve) => setTimeout(() => resolve(null), 20_000)),
   ]);
 
   const merged = backendCat
