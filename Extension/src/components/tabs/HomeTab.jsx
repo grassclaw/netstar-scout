@@ -522,6 +522,14 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
               }`}
             >
               Category: {securityData.category}
+              {securityData.categorySecondary && (
+                <span
+                  className={mode === "dark" ? "text-slate-500" : "text-brand-400"}
+                  title="Secondary category suggestion"
+                >
+                  {" / "}{securityData.categorySecondary}
+                </span>
+              )}
               {securityData.categorySource && (
                 <span
                   className={`ml-1 text-[10px] uppercase tracking-wide ${

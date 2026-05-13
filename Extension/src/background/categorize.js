@@ -68,6 +68,7 @@ export async function categorize(url, content, meta) {
     return {
       category: trimmed,
       categoryId: data.category_id || "",
+      categorySecondary: (data.category_secondary || "").trim(),
       confidence: typeof data.confidence === "number" ? data.confidence : 0,
       source: data.source || "unknown",
       tier: data.tier || "",

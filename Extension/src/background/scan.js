@@ -69,6 +69,7 @@ async function resolveCategoryAsync(url, content, meta, cacheKey, clientResult) 
           ...clientResult,
           category: cat.category,
           categoryId: cat.categoryId,
+          categorySecondary: cat.categorySecondary,
           categorySource: cat.source,
           categoryConfidence: cat.confidence,
           categoryTier: cat.tier,
