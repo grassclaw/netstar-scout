@@ -69,6 +69,7 @@ function categorySourceLabel(src) {
   switch (src) {
     case "polaris": return "via Polaris";
     case "ethos":   return "via Ethos";
+    case "llm":     return "via AI Engine";
     case "fallback":return "from page";
     default:        return "";
   }
@@ -77,7 +78,8 @@ function categorySourceLabel(src) {
 function categorySourceTooltip(src) {
   switch (src) {
     case "polaris": return "Category resolved from NetSTAR's Polaris classification table";
-    case "ethos":   return "Category predicted live by Ethos (NetSTAR ML model)";
+    case "ethos":   return "Category predicted by Ethos (NetSTAR ML model)";
+    case "llm":     return "Category determined live by NetSTAR's AI Engine on this page's content";
     case "fallback":return "Category derived from page metadata — backend unavailable";
     default:        return "";
   }
