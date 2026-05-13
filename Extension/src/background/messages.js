@@ -65,6 +65,11 @@ export function registerMessageListeners() {
       // Live DOM signals + metadata captured by content-inspect.js.
       // Fire-and-forget cache keyed on the same normalized domain that
       // scan.js will look up by, so the two layers line up.
+      //
+      // We do NOT invalidate the scan cache here. A page reload re-fires
+      // content-inspect; that's a refresh of the underlying signals, not a
+      // request for fresh categorization. The user explicitly invokes
+      // rescan via the popup rescan button — that path clears both caches.
       const { signals, meta, content, url } = request;
       if ((signals || meta || content) && url) {
         try {
@@ -74,16 +79,43 @@ export function registerMessageListeners() {
             chrome.storage.local.set({
               [cacheKey]: { signals, meta, content, url, timestamp: Date.now() },
             });
-            // Invalidate the prior scan result so the next popup open
-            // picks up signals captured after the last scan.
-            const scanKey = `scan_${encodeURIComponent(domain)}`;
-            chrome.storage.local.remove(scanKey);
           }
         } catch (e) {
           console.error("Error caching page signals:", e);
         }
       }
       return false;
+    }
+
+    if (request.action === "rescan") {
+      // Explicit user-initiated cache bust + fresh scan. Clears both signals
+      // and scan results for the supplied URL, then re-runs the scan path.
+      (async () => {
+        try {
+          const url = request.url;
+          if (!url) {
+            sendResponse({ error: true, message: "url required" });
+            return;
+          }
+          const domain = normalizeScanDomain(url);
+          if (domain) {
+            const signalsKey = `${SIGNALS_CACHE_PREFIX}${domain}`;
+            const scanKey = `scan_${encodeURIComponent(domain)}`;
+            await chrome.storage.local.remove([signalsKey, scanKey]);
+          }
+          // Re-trigger signal extraction + scoring through the standard path.
+          const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tabs[0]?.id) {
+            await ensurePageSignals(tabs[0].id, url);
+          }
+          const result = await getCachedOrScan(url);
+          sendResponse(result);
+        } catch (e) {
+          console.error("Error in rescan:", e);
+          sendResponse({ error: true, message: e.message });
+        }
+      })();
+      return true;
     }
 
     if (request.action === "scanUrl") {
@@ -168,10 +200,15 @@ export function registerMessageListeners() {
               // On-demand injection: if this tab was opened before the
               // extension was installed/reloaded, its content script never
               // ran. Inject now so the popup can score from real page signals
-              // rather than falling back to URL-only.
+              // rather than falling back to URL-only. Some sites (perplexity,
+              // etc.) block content scripts via CSP — ensurePageSignals
+              // silently no-ops in that case and we proceed without signals.
               await ensurePageSignals(targetTab.id, url);
               const redirectSummary = getRedirectSummary(targetTab.id);
-              const result = await getCachedOrScan(url, { redirectSummary });
+              const result = await getCachedOrScan(url, {
+                redirectSummary,
+                tabTitle: targetTab.title,
+              });
               response = {
                 url,
                 title: targetTab.title,

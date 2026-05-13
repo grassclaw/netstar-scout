@@ -20,8 +20,10 @@ export const ICON_STATES = {
   DANGER: "danger",
 };
 
-// Cache TTL for scan results
-export const CACHE_DURATION_MS = 1000 * 5 * 60; // 5 minutes
+// Cache TTL for scan results. Set long so a page reload of the same URL
+// reuses the cached score + category instead of round-tripping the backend.
+// Users explicitly invoke fresh categorization via the rescan button.
+export const CACHE_DURATION_MS = 1000 * 60 * 60 * 24; // 24 hours
 
 // Score threshold to trigger a warning notification
 export const ALERT_THRESHOLD = 60;

@@ -12,6 +12,7 @@ import {
   ScrollText,
   FileUser,
   NotebookText,
+  RefreshCw,
 } from "lucide-react";
 import { getStatusFromScore, getStatusMessage, getDetailedStatusMessage } from "@/lib/securityUtils";
 import { getColorClasses } from "@/lib/themeUtils";
@@ -302,6 +303,46 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
     setShowIndicators((openState) => !openState);
   };
 
+  const [isRescanning, setIsRescanning] = useState(false);
+
+  /**
+   * Force a fresh scan of the current URL — clears cached signals + scan
+   * result, re-injects content-inspect, re-runs scoring + backend categorize.
+   */
+  const handleRescan = async () => {
+    if (isRescanning) return;
+    const target = overrideUrl || (currentUrl && `https://${currentUrl}`);
+    if (!target || typeof chrome === "undefined" || !chrome.runtime) return;
+
+    setIsRescanning(true);
+    setSecurityData(null);
+    setScanState("loading");
+    setScanError(null);
+
+    try {
+      const result = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "rescan", url: target }, (resp) => resolve(resp));
+      });
+      if (result && !result.error && result.safetyScore !== undefined) {
+        setSafetyScore(result.safetyScore);
+        setSecurityData(result);
+        setScanState("success");
+      } else {
+        const msg = result?.message || result?.error || "Rescan failed";
+        setSecurityData({ error: true, message: msg });
+        setScanError(msg);
+        setScanState("error");
+      }
+    } catch (e) {
+      const msg = e?.message || "Rescan failed";
+      setSecurityData({ error: true, message: msg });
+      setScanError(msg);
+      setScanState("error");
+    } finally {
+      setIsRescanning(false);
+    }
+  };
+
   const isLoading = securityData == null;
   const isError = securityData?.error === true;
 
@@ -356,6 +397,21 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
           }`}
         >
           {headerLine} <span className="break-all">{currentUrl}</span>
+          {!isLoading && !isError && currentUrl && (
+            <button
+              type="button"
+              onClick={handleRescan}
+              disabled={isRescanning}
+              title="Rescan this page"
+              className={`ml-2 inline-flex items-center justify-center rounded-full p-1 align-middle transition ${
+                mode === "dark"
+                  ? "text-brand-300 hover:bg-brand-900/40"
+                  : "text-brand-600 hover:bg-brand-100"
+              } ${isRescanning ? "opacity-60 cursor-wait" : "cursor-pointer"}`}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRescanning ? "animate-spin" : ""}`} />
+            </button>
+          )}
         </p>
         {liveAffordance && (
           <p

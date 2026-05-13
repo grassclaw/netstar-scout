@@ -61,8 +61,12 @@ export async function categorize(url, content, meta) {
     }
     const data = await resp.json();
     if (!data || typeof data.category !== "string") return null;
+    // Empty category name = Ethos returned an ID with no human label.
+    // Treat as a miss so the merge doesn't clobber the client category.
+    const trimmed = data.category.trim();
+    if (!trimmed || trimmed.toLowerCase() === "uncategorized") return null;
     return {
-      category: data.category,
+      category: trimmed,
       categoryId: data.category_id || "",
       confidence: typeof data.confidence === "number" ? data.confidence : 0,
       source: data.source || "unknown",

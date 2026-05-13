@@ -209,39 +209,65 @@ function pageIntegrityDeduction(signals) {
   if (!signals) return { deduction: 0, flags: [] };
   let d = 0;
   const flags = [];
+
+  // eval() in production JS is uncommon — most sites bundle with esbuild/
+  // webpack-prod which avoids it. When present it's a real signal.
   if (signals.eval_calls > 0) {
-    d += Math.min(25, signals.eval_calls * 8);
+    d += Math.min(15, signals.eval_calls * 5);
     flags.push(`${signals.eval_calls} eval() call${signals.eval_calls > 1 ? "s" : ""}`);
   }
-  if (signals.obfuscation_score >= 50) {
-    d += 15;
-    flags.push(`obfuscation score ${signals.obfuscation_score}`);
+
+  // Obfuscation score is noisy: atob + fromCharCode + base64 blobs all
+  // appear in legit minified bundles. Only flag when eval ALSO present
+  // (compound evidence) — that combo is what actually distinguishes
+  // malicious obfuscation from normal minification.
+  if (signals.obfuscation_score >= 70 && signals.eval_calls > 0) {
+    d += 10;
+    flags.push(`obfuscation patterns + eval (score ${signals.obfuscation_score})`);
   }
-  if (signals.hidden_iframes > 0) {
-    d += Math.min(20, signals.hidden_iframes * 8);
-    flags.push(`${signals.hidden_iframes} hidden iframe${signals.hidden_iframes > 1 ? "s" : ""}`);
+
+  // Tracking pixels are typically 1-2 hidden iframes. Three or more starts
+  // looking like a kit drop / ad-injection. Linear above that.
+  if (signals.hidden_iframes >= 3) {
+    d += Math.min(10, (signals.hidden_iframes - 2) * 4);
+    flags.push(`${signals.hidden_iframes} hidden iframes`);
   }
-  if (signals.invisible_chars > 0) {
-    d += Math.min(15, signals.invisible_chars * 2);
-    flags.push(`${signals.invisible_chars} invisible character${signals.invisible_chars > 1 ? "s" : ""}`);
+
+  // Invisible characters in body text are a strong phishing signal but
+  // single occurrences happen in legit (e.g. ZWNJ in CJK). Threshold at 3.
+  if (signals.invisible_chars >= 3) {
+    d += Math.min(10, (signals.invisible_chars - 2) * 2);
+    flags.push(`${signals.invisible_chars} invisible characters`);
   }
+
+  // RTL overrides in body text are basically always a homograph attack.
   if (signals.rtl_overrides > 0) {
-    d += 12;
+    d += 15;
     flags.push("RTL override character present");
   }
-  if (signals.mismatched_links > 2) {
-    d += 10;
-    flags.push(`${signals.mismatched_links} mismatched link${signals.mismatched_links > 1 ? "s" : ""}`);
+
+  // The display-text-domain-mismatch heuristic false-positives on news
+  // articles that contain phrases like "youtube.com" in headlines while
+  // linking elsewhere. Raise threshold + cap deduction.
+  if (signals.mismatched_links >= 5) {
+    d += 5;
+    flags.push(`${signals.mismatched_links} mismatched links`);
   }
+
+  // document.write still used in some ad networks but is uncommon in
+  // first-party code. Modest penalty.
   if (signals.document_write > 0) {
-    d += Math.min(10, signals.document_write * 5);
+    d += Math.min(5, signals.document_write * 2);
     flags.push("document.write() in inline script");
   }
+
+  // High-confidence phishing signal — keep severity.
   if (signals.password_fields > 0 && signals.form_action_external) {
-    d += 25;
+    d += 30;
     flags.push("password form posts to external domain");
   }
-  return { deduction: clamp(d, 0, 70), flags };
+
+  return { deduction: clamp(d, 0, 55), flags };
 }
 
 /**
@@ -254,23 +280,25 @@ function redirectDeduction(rs) {
   if (!rs || rs.hopCount === 0) return { deduction: 0, flags: [] };
   let d = 0;
   const flags = [];
-  if (rs.hopCount >= 3) {
-    d += Math.min(15, (rs.hopCount - 2) * 5);
+  // Long chains alone aren't suspicious — ad networks + SSO bounce a lot.
+  // Only deduct when the chain is genuinely deep.
+  if (rs.hopCount >= 5) {
+    d += Math.min(8, (rs.hopCount - 4) * 3);
     flags.push(`${rs.hopCount}-hop redirect chain`);
   }
-  if (rs.crossOrigin >= 2) {
-    d += 8;
+  if (rs.crossOrigin >= 3) {
+    d += 5;
     flags.push(`${rs.crossOrigin} cross-origin redirect hops`);
   }
   if (rs.protocolDowngrade) {
     flags.push("HTTPS-to-HTTP downgrade in redirect chain");
     // deduction already handled in scoreConnection; no double-count here.
   }
-  if (rs.clientDriven >= 2) {
-    d += 6;
-    flags.push(`${rs.clientDriven} JS / meta-refresh redirect${rs.clientDriven > 1 ? "s" : ""}`);
+  if (rs.clientDriven >= 3) {
+    d += 3;
+    flags.push(`${rs.clientDriven} JS / meta-refresh redirects`);
   }
-  return { deduction: clamp(d, 0, 30), flags };
+  return { deduction: clamp(d, 0, 15), flags };
 }
 
 /**

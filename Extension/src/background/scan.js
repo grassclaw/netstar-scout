@@ -30,18 +30,40 @@ export async function getCachedOrScan(url, ctx = {}) {
   }
 
   const pageCtx = await readCachedPageContext(domain);
-  const result = scoreFromContext(url, pageCtx.signals, pageCtx.meta, {
+  const clientResult = scoreFromContext(url, pageCtx.signals, pageCtx.meta, {
     content: pageCtx.content,
     redirectSummary: ctx.redirectSummary || null,
   });
-  await chrome.storage.local.set({ [cacheKey]: result });
 
-  // Backend categorization runs in parallel — does not block this return.
-  // When the response lands we merge into cache; the next popup open picks
-  // up the upgraded category + source badge.
-  void categorizeInBackground(url, pageCtx, cacheKey, result);
+  // Fall back to the tab title when content-inspect didn't run (CSP-strict
+  // sites like perplexity, chatgpt, banks). Ethos can still classify
+  // reasonably from a title alone.
+  const metaForBackend = pageCtx.meta || (ctx.tabTitle ? { title: ctx.tabTitle } : null);
 
-  return result;
+  // Wait for backend categorization so the FIRST popup open shows the real
+  // Polaris/Ethos category, not the client-side metadata fallback. Polaris
+  // hits in <100ms; Ethos averages ~500ms warm, ~1.5s cold. Budget 4s — the
+  // popup is already waiting for ensurePageSignals (600ms) before this, so
+  // total worst-case popup latency is ~4.6s. If it times out, return client
+  // result and let next open pick up the merge.
+  const backendCat = await Promise.race([
+    categorize(url, pageCtx.content, metaForBackend),
+    new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
+  ]);
+
+  const merged = backendCat
+    ? {
+        ...clientResult,
+        category: backendCat.category,
+        categoryId: backendCat.categoryId,
+        categorySource: backendCat.source,
+        categoryConfidence: backendCat.confidence,
+        categoryTier: backendCat.tier,
+      }
+    : clientResult;
+
+  await chrome.storage.local.set({ [cacheKey]: merged });
+  return merged;
 }
 
 export async function performSecurityScan(url, ctx = {}) {
@@ -75,26 +97,3 @@ async function readCachedPageContext(domain) {
   }
 }
 
-/**
- * Async backend categorization. On success, merges {category, categoryId,
- * categorySource, confidence, tier} into the cached scan result and writes
- * back so the next popup open displays it. Failure modes (no token, network
- * error, CF Access 403) leave the client-side result untouched — silent.
- */
-async function categorizeInBackground(url, pageCtx, cacheKey, clientResult) {
-  // Require real-looking domain. IPs / extension URLs skipped.
-  if (!url || !/\.[a-z]{2,}/i.test(url)) return;
-
-  const cat = await categorize(url, pageCtx.content, pageCtx.meta);
-  if (!cat) return;
-
-  const merged = {
-    ...clientResult,
-    category: cat.category,
-    categoryId: cat.categoryId,
-    categorySource: cat.source,
-    categoryConfidence: cat.confidence,
-    categoryTier: cat.tier,
-  };
-  await chrome.storage.local.set({ [cacheKey]: merged });
-}
