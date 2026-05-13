@@ -275,8 +275,9 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
             return;
           }
 
-          // Background responded but no data — show error instead of spinning forever
-          const msg = "No security data returned";
+          // No scannable active tab (browser is on chrome://, settings, etc.).
+          // Show a friendly prompt instead of an error spinner.
+          const msg = "Open a webpage tab to scan it";
           setSecurityData({ error: true, message: msg });
           setScanError(msg);
           setScanState("error");

@@ -164,32 +164,12 @@ export function registerMessageListeners() {
         const t0 = Date.now();
         try {
           const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-          let targetTab = activeTabs[0];
-
-          if (
-            !targetTab ||
-            !targetTab.url ||
-            !/^https?:\/\//i.test(targetTab.url) ||
-            targetTab.url.startsWith("chrome-extension://") ||
-            targetTab.url.startsWith("chrome://") ||
-            targetTab.url.startsWith("edge://") ||
-            targetTab.url.startsWith("about:")
-          ) {
-            const allTabs = await chrome.tabs.query({ currentWindow: true });
-            for (const t of allTabs) {
-              if (
-                t.url &&
-                /^https?:\/\//i.test(t.url) &&
-                !t.url.startsWith("chrome-extension://") &&
-                !t.url.startsWith("chrome://") &&
-                !t.url.startsWith("edge://") &&
-                !t.url.startsWith("about:")
-              ) {
-                targetTab = t;
-                break;
-              }
-            }
-          }
+          const targetTab = activeTabs[0];
+          // Previously fell back to the first http(s) tab in the window when
+          // active wasn't scannable (chrome://, edge://, etc.) — that
+          // silently scanned a different tab than the one the user saw,
+          // which is confusing. Now: if active isn't scannable, return a
+          // clean empty state so the popup shows a clear message.
 
           let response;
           if (targetTab && targetTab.url) {
