@@ -5,6 +5,7 @@ import { maybeShowRiskNotification } from "./notifications.js";
 import { SIGNALS_CACHE_PREFIX } from "./constants.js";
 import { normalizeScanDomain } from "./urlNormalize.js";
 import { getRedirectSummary } from "./redirects.js";
+import { getLastActiveScannableTab, isScannableUrl } from "./activeTab.js";
 
 /**
  * Ensure live page signals are cached for the given tab before scoring.
@@ -163,41 +164,34 @@ export function registerMessageListeners() {
       (async () => {
         const t0 = Date.now();
         try {
-          // Use lastFocusedWindow: the window the user most recently
-          // interacted with. currentWindow can pick the wrong one in
-          // multi-window setups because the popup itself counts as the
-          // "current" window from its own POV.
+          // Primary path: query the active tab right now. This is correct
+          // in the normal case (single window, foreground = the page the
+          // user is looking at).
           const activeTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
           let targetTab = activeTabs[0];
           console.log(
-            "[NetSTAR] getCurrentTab: active=",
+            "[NetSTAR] getCurrentTab: query active=",
             targetTab ? `${targetTab.id}:${targetTab.url?.slice(0, 80)}` : "none"
           );
 
-          // If active isn't an http(s) page (new tab, settings, etc.),
-          // fall back to the first http(s) tab in the SAME window.
-          if (
-            !targetTab ||
-            !targetTab.url ||
-            !/^https?:\/\//i.test(targetTab.url) ||
-            targetTab.url.startsWith("chrome-extension://") ||
-            targetTab.url.startsWith("chrome://") ||
-            targetTab.url.startsWith("edge://") ||
-            targetTab.url.startsWith("about:")
-          ) {
-            const allTabs = await chrome.tabs.query({ lastFocusedWindow: true });
-            for (const t of allTabs) {
-              if (
-                t.url &&
-                /^https?:\/\//i.test(t.url) &&
-                !t.url.startsWith("chrome-extension://") &&
-                !t.url.startsWith("chrome://") &&
-                !t.url.startsWith("edge://") &&
-                !t.url.startsWith("about:")
-              ) {
-                targetTab = t;
-                console.log("[NetSTAR] getCurrentTab: fallback to", `${t.id}:${t.url.slice(0, 80)}`);
-                break;
+          // If active isn't a scannable http(s) page (chrome://, new tab,
+          // PDF viewer, etc.), consult the active-tab tracker — it stored
+          // the most recent scannable tab as the user navigated. That's
+          // the page they were on before clicking the icon.
+          if (!isScannableUrl(targetTab?.url)) {
+            const remembered = await getLastActiveScannableTab();
+            if (remembered) {
+              try {
+                const liveTab = await chrome.tabs.get(remembered.id);
+                if (isScannableUrl(liveTab.url)) {
+                  targetTab = liveTab;
+                  console.log(
+                    "[NetSTAR] getCurrentTab: using remembered tab",
+                    `${liveTab.id}:${liveTab.url.slice(0, 80)}`
+                  );
+                }
+              } catch {
+                // The remembered tab was closed since.
               }
             }
           }
