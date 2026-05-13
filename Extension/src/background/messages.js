@@ -175,7 +175,11 @@ export function registerMessageListeners() {
           if (targetTab && targetTab.url) {
             const url = targetTab.url;
             if (!/^https?:\/\//i.test(url)) {
-              response = { url, title: targetTab.title, securityData: null };
+              response = {
+                url,
+                title: targetTab.title,
+                securityData: { error: true, message: "Open a webpage tab to scan" },
+              };
             } else {
               // On-demand injection: if this tab was opened before the
               // extension was installed/reloaded, its content script never

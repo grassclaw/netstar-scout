@@ -266,6 +266,17 @@ export function HomeTab({ mode, onNavigate, forceShowIndicators, overrideUrl, ov
 
             setCurrentUrl(hostnameFromUrl(response.url));
 
+            // Background can return { error: true, message: ... } for non-
+            // scannable tabs (chrome://, settings, new tab). Render that
+            // as a friendly empty state instead of the loading spinner.
+            if (response.securityData?.error) {
+              const msg = response.securityData.message || "This page can't be scanned";
+              setSecurityData({ error: true, message: msg });
+              setScanError(msg);
+              setScanState("error");
+              return;
+            }
+
             if (response.securityData?.safetyScore !== undefined) {
               setSafetyScore(response.securityData.safetyScore);
               setSecurityData(response.securityData);

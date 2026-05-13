@@ -79,16 +79,17 @@ async function resolveCategoryAsync(url, content, meta, cacheKey, clientResult) 
     await chrome.storage.local.set({ [cacheKey]: merged });
 
     // Notify any open popup that the category has resolved. Popup listens
-    // via chrome.runtime.onMessage and updates state in place.
-    try {
-      chrome.runtime.sendMessage({
+    // via chrome.runtime.onMessage and updates state in place. sendMessage
+    // rejects (async) when no popup is open — that's expected, swallow it.
+    chrome.runtime
+      .sendMessage({
         action: "categoryResolved",
         url,
         securityData: merged,
+      })
+      .catch(() => {
+        // No popup listening — fine, cache is the source of truth.
       });
-    } catch {
-      // No popup listening — that's fine, cache is the source of truth.
-    }
   } catch (e) {
     // Defensive: never let async resolution throw unhandled.
     console.error("[NetSTAR] resolveCategoryAsync failed:", e);
