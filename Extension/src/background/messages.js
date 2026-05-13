@@ -163,13 +163,29 @@ export function registerMessageListeners() {
       (async () => {
         const t0 = Date.now();
         try {
+          // Try active-in-current-window first. If that lands on a chrome://
+          // surface (new tab, settings, extensions), fall back to the most
+          // recently accessed http(s) tab in the window. Chrome occasionally
+          // reports the wrong active tab when the popup opens, so the
+          // fallback covers the common "I'm clearly on a webpage" case.
           const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-          const targetTab = activeTabs[0];
-          // Previously fell back to the first http(s) tab in the window when
-          // active wasn't scannable (chrome://, edge://, etc.) — that
-          // silently scanned a different tab than the one the user saw,
-          // which is confusing. Now: if active isn't scannable, return a
-          // clean empty state so the popup shows a clear message.
+          let targetTab = activeTabs[0];
+          const isScannable = (t) =>
+            t?.url &&
+            /^https?:\/\//i.test(t.url) &&
+            !t.url.startsWith("chrome-extension://") &&
+            !t.url.startsWith("chrome://") &&
+            !t.url.startsWith("edge://") &&
+            !t.url.startsWith("about:");
+
+          if (!isScannable(targetTab)) {
+            const allTabs = await chrome.tabs.query({ currentWindow: true });
+            const scannable = allTabs.filter(isScannable);
+            // Most recently focused first — closest to "the page the user
+            // was just looking at" before clicking the extension icon.
+            scannable.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+            if (scannable[0]) targetTab = scannable[0];
+          }
 
           let response;
           if (targetTab && targetTab.url) {
