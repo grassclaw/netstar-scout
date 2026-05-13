@@ -163,28 +163,35 @@ export function registerMessageListeners() {
       (async () => {
         const t0 = Date.now();
         try {
-          // Try active-in-current-window first. If that lands on a chrome://
-          // surface (new tab, settings, extensions), fall back to the most
-          // recently accessed http(s) tab in the window. Chrome occasionally
-          // reports the wrong active tab when the popup opens, so the
-          // fallback covers the common "I'm clearly on a webpage" case.
           const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
           let targetTab = activeTabs[0];
-          const isScannable = (t) =>
-            t?.url &&
-            /^https?:\/\//i.test(t.url) &&
-            !t.url.startsWith("chrome-extension://") &&
-            !t.url.startsWith("chrome://") &&
-            !t.url.startsWith("edge://") &&
-            !t.url.startsWith("about:");
 
-          if (!isScannable(targetTab)) {
+          // If the active tab isn't a normal http(s) page (new tab,
+          // settings, etc.), find the first http(s) tab in the same window.
+          // This matches the long-standing behavior the popup has had.
+          if (
+            !targetTab ||
+            !targetTab.url ||
+            !/^https?:\/\//i.test(targetTab.url) ||
+            targetTab.url.startsWith("chrome-extension://") ||
+            targetTab.url.startsWith("chrome://") ||
+            targetTab.url.startsWith("edge://") ||
+            targetTab.url.startsWith("about:")
+          ) {
             const allTabs = await chrome.tabs.query({ currentWindow: true });
-            const scannable = allTabs.filter(isScannable);
-            // Most recently focused first — closest to "the page the user
-            // was just looking at" before clicking the extension icon.
-            scannable.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-            if (scannable[0]) targetTab = scannable[0];
+            for (const t of allTabs) {
+              if (
+                t.url &&
+                /^https?:\/\//i.test(t.url) &&
+                !t.url.startsWith("chrome-extension://") &&
+                !t.url.startsWith("chrome://") &&
+                !t.url.startsWith("edge://") &&
+                !t.url.startsWith("about:")
+              ) {
+                targetTab = t;
+                break;
+              }
+            }
           }
 
           let response;
