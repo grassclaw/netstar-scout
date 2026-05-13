@@ -163,12 +163,19 @@ export function registerMessageListeners() {
       (async () => {
         const t0 = Date.now();
         try {
-          const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+          // Use lastFocusedWindow: the window the user most recently
+          // interacted with. currentWindow can pick the wrong one in
+          // multi-window setups because the popup itself counts as the
+          // "current" window from its own POV.
+          const activeTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
           let targetTab = activeTabs[0];
+          console.log(
+            "[NetSTAR] getCurrentTab: active=",
+            targetTab ? `${targetTab.id}:${targetTab.url?.slice(0, 80)}` : "none"
+          );
 
-          // If the active tab isn't a normal http(s) page (new tab,
-          // settings, etc.), find the first http(s) tab in the same window.
-          // This matches the long-standing behavior the popup has had.
+          // If active isn't an http(s) page (new tab, settings, etc.),
+          // fall back to the first http(s) tab in the SAME window.
           if (
             !targetTab ||
             !targetTab.url ||
@@ -178,7 +185,7 @@ export function registerMessageListeners() {
             targetTab.url.startsWith("edge://") ||
             targetTab.url.startsWith("about:")
           ) {
-            const allTabs = await chrome.tabs.query({ currentWindow: true });
+            const allTabs = await chrome.tabs.query({ lastFocusedWindow: true });
             for (const t of allTabs) {
               if (
                 t.url &&
@@ -189,6 +196,7 @@ export function registerMessageListeners() {
                 !t.url.startsWith("about:")
               ) {
                 targetTab = t;
+                console.log("[NetSTAR] getCurrentTab: fallback to", `${t.id}:${t.url.slice(0, 80)}`);
                 break;
               }
             }
